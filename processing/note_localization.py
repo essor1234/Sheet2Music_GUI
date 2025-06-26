@@ -8,7 +8,7 @@ import os
 import numpy as np
 import re
 import matplotlib.pyplot as plt
-
+from pathlib import Path
 # Set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -336,138 +336,261 @@ def save_image_with_bboxes(img_np, filename, filtered_predictions, input_resize_
     cv2.imwrite(bbox_path, img_np_with_boxes)
     print(f"📸 Saved image with bounding boxes: {bbox_path} (size: {new_width}x{new_height})")
 
+# def predict_notes(model_path, groups_path, model_type='fasterrcnn_resnet50_fpn_v2', output_base_dir=None,
+#                   conf_threshold=0.5, num_classes=5, save_crops_enabled=False,  # Renamed parameter
+#                   input_resize_factor=2.0, enhance_noteheads=False, blur_type='gaussian', blur_strength=3,
+#                   visualize_resized=False, visualize_dir=None, save_bbox_images=False, bbox_images_dir=None):
+#     """
+#     Predict bounding boxes for notes in images across group folders, return sorted coordinates,
+#     and optionally save cropped bounding boxes or preprocessed images with bounding boxes (no labels).
+#
+#     Args:
+#         model_path (str): Path to the trained Faster R-CNN model (.pth file).
+#         groups_path (str): Directory containing group subfolders (e.g., 'group_1', 'group_2').
+#         model_type (str, optional): Type of Faster R-CNN model (default: 'fasterrcnn_resnet50_fpn_v2').
+#         output_base_dir (str, optional): Base directory to save cropped bounding boxes.
+#         conf_threshold (float): Confidence threshold for predictions (default: 0.5).
+#         num_classes (int): Number of classes in the model (default: 5).
+#         save_crops_enabled (bool): If True, save cropped bounding boxes to output_base_dir.
+#         input_resize_factor (float): Factor to resize input images (e.g., 2.0 for 2x size, default: 2.0).
+#         enhance_noteheads (bool): If True, apply preprocessing to enhance noteheads (default: False).
+#         blur_type (str): Type of blur to apply ('gaussian', 'median', 'bilateral', or None, default: 'gaussian').
+#         blur_strength (int): Kernel size for blur (default: 3).
+#         visualize_resized (bool or str): If 'display', show resized images; if 'save', save to visualize_dir; if False, skip.
+#         visualize_dir (str, optional): Directory to save resized images if visualize_resized='save'.
+#         save_bbox_images (bool): If True, save preprocessed images with bounding boxes (no labels) to bbox_images_dir.
+#         bbox_images_dir (str, optional): Directory to save images with bounding boxes.
+#
+#     Returns:
+#         dict: {group_folder: {filename: [{'bbox': [x1, y1, x2, y2], 'label': int, 'score': float}, ...]}}
+#               Bounding boxes sorted left-to-right (by x1) for each image, normalized to original size.
+#     """
+#     # Load model
+#     model = load_model(model_path, model_type=model_type, num_classes=num_classes)
+#
+#     # Validate groups_path
+#     if not os.path.isdir(groups_path):
+#         print(f"⚠️ Error: {groups_path} is not a valid directory")
+#         return {}
+#
+#     # Create output directories
+#     if save_crops_enabled and output_base_dir:
+#         os.makedirs(output_base_dir, exist_ok=True)
+#     if visualize_resized == 'save' and visualize_dir:
+#         os.makedirs(visualize_dir, exist_ok=True)
+#     if save_bbox_images and bbox_images_dir:
+#         os.makedirs(bbox_images_dir, exist_ok=True)
+#
+#     # Initialize results
+#     results = {}
+#
+#     # Get group folders
+#     group_folders = [f for f in os.listdir(groups_path) if
+#                      os.path.isdir(os.path.join(groups_path, f)) and re.match(r'group_\d+', f)]
+#     if not group_folders:
+#         print(f"⚠️ No group folders found in {groups_path}")
+#         return {}
+#
+#     print(f"Processing {len(group_folders)} group folders: {group_folders}")
+#
+#     # Process each group folder
+#     for group_folder in group_folders:
+#         input_group_dir = os.path.join(groups_path, group_folder)
+#         output_group_dir = os.path.join(output_base_dir, group_folder) if save_crops_enabled and output_base_dir else None
+#         if output_group_dir:
+#             os.makedirs(output_group_dir, exist_ok=True)
+#
+#         image_files = [f for f in os.listdir(input_group_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+#         if not image_files:
+#             print(f"⚠️ No images found in {input_group_dir}")
+#             continue
+#
+#         group_results = {}
+#         print(f"\nProcessing group: {group_folder} ({len(image_files)} images)")
+#
+#         for idx, filename in enumerate(image_files):
+#             image_path = os.path.join(input_group_dir, filename)
+#             print(f"[{idx + 1}/{len(image_files)}] Processing: {filename}")
+#
+#             # Load and preprocess image
+#             img_np, original_height, original_width = load_and_preprocess_image(
+#                 image_path, enhance_noteheads, blur_type, blur_strength
+#             )
+#             if img_np is None:
+#                 continue
+#
+#             # Resize image
+#             resized_img_np, new_width, new_height = resize_image(
+#                 img_np, input_resize_factor, original_width, original_height
+#             )
+#
+#             # Visualize resized image
+#             visualize_resized_image(
+#                 resized_img_np, filename, new_width, new_height, visualize_resized, visualize_dir
+#             )
+#
+#             # Run inference
+#             predictions = run_inference(model, resized_img_np)
+#
+#             # Process predictions
+#             filtered_predictions = process_predictions(predictions, conf_threshold, input_resize_factor)
+#
+#             # Save crops if requested
+#             if save_crops_enabled and output_group_dir:
+#                 img_np_original = cv2.imread(image_path)  # Load original for cropping
+#                 save_crops(img_np_original, filename, filtered_predictions, output_group_dir)
+#
+#             # Save image with bounding boxes if requested
+#             if save_bbox_images and bbox_images_dir:
+#                 save_image_with_bboxes(
+#                     resized_img_np, filename, filtered_predictions, input_resize_factor,
+#                     bbox_images_dir, new_width, new_height
+#                 )
+#
+#             group_results[filename] = filtered_predictions
+#
+#         results[group_folder] = group_results
+#
+#     print("\n🎉 All images processed.")
+#     return results
+
 def predict_notes(model_path, groups_path, model_type='fasterrcnn_resnet50_fpn_v2', output_base_dir=None,
-                  conf_threshold=0.5, num_classes=5, save_crops_enabled=False,  # Renamed parameter
+                  conf_threshold=0.5, num_classes=5, save_crops_enabled=False,
                   input_resize_factor=2.0, enhance_noteheads=False, blur_type='gaussian', blur_strength=3,
                   visualize_resized=False, visualize_dir=None, save_bbox_images=False, bbox_images_dir=None):
     """
-    Predict bounding boxes for notes in images across group folders, return sorted coordinates,
-    and optionally save cropped bounding boxes or preprocessed images with bounding boxes (no labels).
+    Predict bounding boxes for notes in images directly under groups_path,
+    and optionally save cropped or annotated images.
 
     Args:
         model_path (str): Path to the trained Faster R-CNN model (.pth file).
-        groups_path (str): Directory containing group subfolders (e.g., 'group_1', 'group_2').
-        model_type (str, optional): Type of Faster R-CNN model (default: 'fasterrcnn_resnet50_fpn_v2').
-        output_base_dir (str, optional): Base directory to save cropped bounding boxes.
-        conf_threshold (float): Confidence threshold for predictions (default: 0.5).
-        num_classes (int): Number of classes in the model (default: 5).
-        save_crops_enabled (bool): If True, save cropped bounding boxes to output_base_dir.
-        input_resize_factor (float): Factor to resize input images (e.g., 2.0 for 2x size, default: 2.0).
-        enhance_noteheads (bool): If True, apply preprocessing to enhance noteheads (default: False).
-        blur_type (str): Type of blur to apply ('gaussian', 'median', 'bilateral', or None, default: 'gaussian').
-        blur_strength (int): Kernel size for blur (default: 3).
-        visualize_resized (bool or str): If 'display', show resized images; if 'save', save to visualize_dir; if False, skip.
-        visualize_dir (str, optional): Directory to save resized images if visualize_resized='save'.
-        save_bbox_images (bool): If True, save preprocessed images with bounding boxes (no labels) to bbox_images_dir.
-        bbox_images_dir (str, optional): Directory to save images with bounding boxes.
+        groups_path (str): Directory containing note images directly (e.g., .../measures/measure).
+        model_type (str): Model architecture name from torchvision.models.detection.
+        output_base_dir (str): Where to save cropped note images.
+        conf_threshold (float): Minimum confidence score.
+        num_classes (int): Total classes in model.
+        save_crops_enabled (bool): If True, save cropped note patches.
+        input_resize_factor (float): Resize factor for inference.
+        enhance_noteheads (bool): If True, enhance notehead features.
+        blur_type (str): Type of blur ('gaussian', etc.)
+        blur_strength (int): Strength of blur.
+        visualize_resized (bool|str): Show or save resized image.
+        visualize_dir (str): Where to save resized images (if `visualize_resized == 'save'`).
+        save_bbox_images (bool): If True, save image with predicted bboxes.
+        bbox_images_dir (str): Directory for bbox visualization images.
 
     Returns:
-        dict: {group_folder: {filename: [{'bbox': [x1, y1, x2, y2], 'label': int, 'score': float}, ...]}}
-              Bounding boxes sorted left-to-right (by x1) for each image, normalized to original size.
+        dict: {filename: [prediction_dict, ...]}
     """
+    import os
+
     # Load model
     model = load_model(model_path, model_type=model_type, num_classes=num_classes)
 
-    # Validate groups_path
     if not os.path.isdir(groups_path):
-        print(f"⚠️ Error: {groups_path} is not a valid directory")
+        print(f"❌ Invalid image path: {groups_path}")
         return {}
 
-    # Create output directories
-    if save_crops_enabled and output_base_dir:
-        os.makedirs(output_base_dir, exist_ok=True)
-    if visualize_resized == 'save' and visualize_dir:
-        os.makedirs(visualize_dir, exist_ok=True)
-    if save_bbox_images and bbox_images_dir:
-        os.makedirs(bbox_images_dir, exist_ok=True)
+    os.makedirs(output_base_dir, exist_ok=True) if save_crops_enabled and output_base_dir else None
+    os.makedirs(visualize_dir, exist_ok=True) if visualize_resized == 'save' and visualize_dir else None
+    os.makedirs(bbox_images_dir, exist_ok=True) if save_bbox_images and bbox_images_dir else None
 
-    # Initialize results
     results = {}
 
-    # Get group folders
-    group_folders = [f for f in os.listdir(groups_path) if
-                     os.path.isdir(os.path.join(groups_path, f)) and re.match(r'group_\d+', f)]
-    if not group_folders:
-        print(f"⚠️ No group folders found in {groups_path}")
+    image_files = [f for f in os.listdir(groups_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    if not image_files:
+        print(f"⚠️ No image files found in {groups_path}")
         return {}
 
-    print(f"Processing {len(group_folders)} group folders: {group_folders}")
+    print(f"📄 Found {len(image_files)} images in: {groups_path}")
 
-    # Process each group folder
-    for group_folder in group_folders:
-        input_group_dir = os.path.join(groups_path, group_folder)
-        output_group_dir = os.path.join(output_base_dir, group_folder) if save_crops_enabled and output_base_dir else None
-        if output_group_dir:
-            os.makedirs(output_group_dir, exist_ok=True)
+    for idx, filename in enumerate(image_files):
+        image_path = os.path.join(groups_path, filename)
+        print(f"[{idx+1}/{len(image_files)}] Predicting: {filename}")
 
-        image_files = [f for f in os.listdir(input_group_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-        if not image_files:
-            print(f"⚠️ No images found in {input_group_dir}")
+        # Load and preprocess
+        img_np, orig_h, orig_w = load_and_preprocess_image(
+            image_path, enhance_noteheads, blur_type, blur_strength)
+        if img_np is None:
             continue
 
-        group_results = {}
-        print(f"\nProcessing group: {group_folder} ({len(image_files)} images)")
+        # Resize
+        resized_img_np, new_w, new_h = resize_image(img_np, input_resize_factor, orig_w, orig_h)
 
-        for idx, filename in enumerate(image_files):
-            image_path = os.path.join(input_group_dir, filename)
-            print(f"[{idx + 1}/{len(image_files)}] Processing: {filename}")
+        # Show/save visualization
+        visualize_resized_image(resized_img_np, filename, new_w, new_h, visualize_resized, visualize_dir)
 
-            # Load and preprocess image
-            img_np, original_height, original_width = load_and_preprocess_image(
-                image_path, enhance_noteheads, blur_type, blur_strength
-            )
-            if img_np is None:
-                continue
+        # Inference
+        predictions = run_inference(model, resized_img_np)
 
-            # Resize image
-            resized_img_np, new_width, new_height = resize_image(
-                img_np, input_resize_factor, original_width, original_height
-            )
+        # Postprocess
+        filtered_preds = process_predictions(predictions, conf_threshold, input_resize_factor)
 
-            # Visualize resized image
-            visualize_resized_image(
-                resized_img_np, filename, new_width, new_height, visualize_resized, visualize_dir
-            )
+        # Save crops if needed
+        if save_crops_enabled and output_base_dir:
+            img_orig = cv2.imread(image_path)
+            save_crops(img_orig, filename, filtered_preds, output_base_dir)
 
-            # Run inference
-            predictions = run_inference(model, resized_img_np)
+        # Save image with bboxes
+        if save_bbox_images and bbox_images_dir:
+            save_image_with_bboxes(resized_img_np, filename, filtered_preds, input_resize_factor,
+                                   bbox_images_dir, new_w, new_h)
 
-            # Process predictions
-            filtered_predictions = process_predictions(predictions, conf_threshold, input_resize_factor)
+        results[filename] = filtered_preds
 
-            # Save crops if requested
-            if save_crops_enabled and output_group_dir:
-                img_np_original = cv2.imread(image_path)  # Load original for cropping
-                save_crops(img_np_original, filename, filtered_predictions, output_group_dir)
-
-            # Save image with bounding boxes if requested
-            if save_bbox_images and bbox_images_dir:
-                save_image_with_bboxes(
-                    resized_img_np, filename, filtered_predictions, input_resize_factor,
-                    bbox_images_dir, new_width, new_height
-                )
-
-            group_results[filename] = filtered_predictions
-
-        results[group_folder] = group_results
-
-    print("\n🎉 All images processed.")
+    print("✅ Prediction complete.")
     return results
 
-def process_predict_notes(model_path, path, bbox_img_dir, output_notes_path):
-    note_results = predict_notes(
-        model_path=model_path,
-        groups_path=path,
-        output_base_dir=output_notes_path,
-        conf_threshold=0.65,
-        save_crops_enabled=True,
-        input_resize_factor=2.0,
-        enhance_noteheads=True,
-        visualize_resized='display',
-        blur_strength=2,
-        save_bbox_images=True,
-        bbox_images_dir=bbox_img_dir)
 
-    return note_results
+def process_predict_notes_from_grouping(model_path, grouping_path, bbox_img_dir, output_notes_path):
+    """
+    Traverse grouping_path/.../group_x/measures/measure/ folders to predict notes.
+
+    Args:
+        model_path (str): Path to trained YOLO model
+        grouping_path (str or Path): Root path with measure crops inside group_x
+        bbox_img_dir (str or Path): Directory to save bounding box images
+        output_notes_path (str or Path): Where to store prediction results
+
+    Returns:
+        Dict: Aggregated results from all groups
+    """
+    grouping_path = Path(grouping_path)
+    bbox_img_dir = Path(bbox_img_dir)
+    output_notes_path = Path(output_notes_path)
+
+    all_results = {}
+
+    for pdf_dir in grouping_path.iterdir():
+        if not pdf_dir.is_dir():
+            continue
+        for page_dir in pdf_dir.glob("page_*"):
+            for group_dir in page_dir.glob("group_*"):
+                measure_folder = group_dir / "measures" / "measure"
+                if not measure_folder.exists():
+                    print(f"⚠️ Skipping: {measure_folder} not found")
+                    continue
+
+                group_key = f"{pdf_dir.name}/{page_dir.name}/{group_dir.name}"
+                print(f"\n🎼 Predicting notes for {group_key}...")
+
+                result = predict_notes(
+                    model_path=model_path,
+                    groups_path=str(measure_folder),
+                    output_base_dir=str(output_notes_path / pdf_dir.name / page_dir.name / group_dir.name),
+                    conf_threshold=0.75,
+                    save_crops_enabled=True,
+                    input_resize_factor=2.8,
+                    enhance_noteheads=True,
+                    visualize_resized=False,  # or 'display'
+                    blur_strength=3,
+                    save_bbox_images=True,
+                    bbox_images_dir=str(bbox_img_dir / pdf_dir.name / page_dir.name / group_dir.name)
+                )
+
+                all_results[group_key] = result
+
+    print("\n✅ Finished predicting notes in all measure folders.")
+    return all_results
 
 

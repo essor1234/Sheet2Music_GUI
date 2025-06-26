@@ -8,6 +8,7 @@ from processing.clefs_classification import *
 from processing.staffLine_seperating import *
 from processing.grouping_process import *
 from processing.staff_localization import *
+from processing.note_localization import *
 # Base home path (absolute)
 home_path = Path("data_storage").resolve()
 
@@ -23,7 +24,9 @@ staffLines_path = home_path / "staffLines_path" # store staffLine images
 grouping_path = home_path/ "grouping_path" # Store clean_sep_clef and staffLine
 notations_path = home_path / "notations_path" # store notations
 
-path_list = [OG_path, binary_path, staffLines_path, grandStaff_path, cleanClefs_path, measures_path, notations_path, pureClefs_path, grouping_path]
+note_bbox = home_path / "note_bbox"
+
+path_list = [OG_path, binary_path, staffLines_path, grandStaff_path, cleanClefs_path, measures_path, notations_path, pureClefs_path, grouping_path, note_bbox]
 
 pdf_dir = "violet_snow_for_orchestra-1.pdf" # For testing
 
@@ -32,6 +35,7 @@ grandStaff_model = "models/group_staff_seperating_2nd_v2.pt"
 clef_model = "models/clef_separating_v2.pt"
 clef_cls_model = "models/CNN_CLS/clef_doubleCheck_model_2nd.pkl"
 measure_model = "models/measure_seperating_v3.pt"
+note_predict_model = "models/fasterrcnn_finetuned_1606.pth"
 def pipe_line():
     # Create requirement paths
     create_paths(path_list)
@@ -68,6 +72,12 @@ def pipe_line():
 
     # Staff Localization
     staff_results = process_group_staffs_from_grouping(grouping_path)
+
+    # Note Localization
+    note_results = process_predict_notes_from_grouping(note_predict_model, grouping_path, note_bbox, notations_path)
+
+    # Pitch Calculate
+
 
 # Run the pipeline
 if __name__ == "__main__":
