@@ -7,6 +7,7 @@ from processing.organizing import *
 from processing.clefs_classification import *
 from processing.staffLine_seperating import *
 from processing.grouping_process import *
+from processing.staff_localization import *
 # Base home path (absolute)
 home_path = Path("data_storage").resolve()
 
@@ -64,6 +65,9 @@ def pipe_line():
 
     # Clean measures
     clean_measure_crops(grouping_path, verbose=True)
+
+    # Staff Localization
+    staff_results = process_group_staffs_from_grouping(grouping_path)
 
 # Run the pipeline
 if __name__ == "__main__":

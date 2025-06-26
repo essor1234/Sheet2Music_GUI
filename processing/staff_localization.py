@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+from pathlib import Path
 def get_staffLine_y_coordinate(path, isDisplay=True):
     img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
     # Binarize (optional but recommended)
@@ -77,84 +78,71 @@ def calculate_staffs_y_coordinate(firstLineCoor, distance, staffType="line", ext
     return staffList
 
 
-def process_group_staffs(groups_path, output_folder, isDisplay=False, extra=None):
+def process_group_staffs_from_grouping(grouping_path, isDisplay=False, extra=None):
     """
-    Process images in group folders to detect staff lines and calculate coordinates.
+    Process staff line detection inside grouping_path/.../group_x/staffLines/.
 
     Args:
-        groups_path (str): Directory containing group subfolders (e.g., 'group_1', 'group_2').
-        output_folder (str): Directory to save output files or results.
-        isDisplay (bool): If True, display row mean intensity plots.
+        grouping_path (str or Path): Root path containing pdf/page/group/staffLines structure
+        output_folder (str): Output path to save staffLine visualizations
+        isDisplay (bool): Display row mean intensity plots (for debugging)
+        extra (int): Extra lines/spaces before/after standard staff range
 
     Returns:
-        dict: Mapping of group folder to list of staff coordinates per image.
+        dict: Nested dictionary with coordinates for each staff group
     """
-    # Create output directory
-    os.makedirs(output_folder, exist_ok=True)
+    grouping_path = Path(grouping_path)
+    # output_folder = Path(output_folder)
+    # output_folder.mkdir(parents=True, exist_ok=True)
 
-    # Get group folders
-    group_folders = [f for f in os.listdir(groups_path) if
-                     os.path.isdir(os.path.join(groups_path, f)) and f.startswith('group_')]
+    results = {}
 
-    if not group_folders:
-        print(f"⚠️ No group folders found in {groups_path}")
-        return {}
-
-    print(f"Found {len(group_folders)} group folders: {group_folders}")
-
-    results = {}  # Store results as {group_folder: {filename: staff_coordinates}}
-
-    for group_folder in group_folders:
-        input_group_dir = os.path.join(groups_path, group_folder)
-        output_group_dir = os.path.join(output_folder, group_folder)
-        os.makedirs(output_group_dir, exist_ok=True)
-
-        image_files = [f for f in os.listdir(input_group_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-
-        if not image_files:
-            print(f"⚠️ No images found in {input_group_dir}")
+    for pdf_dir in grouping_path.iterdir():
+        if not pdf_dir.is_dir():
             continue
+        for page_dir in pdf_dir.glob("page_*"):
+            for group_dir in page_dir.glob("group_*"):
+                staff_dir = group_dir / "staffLines"
+                if not staff_dir.exists():
+                    print(f"⚠️ Skipping: No staffLines folder in {group_dir}")
+                    continue
 
-        group_results = {}
-        print(f"\nProcessing group: {group_folder} ({len(image_files)} images)")
+                image_files = [f for f in staff_dir.glob("*") if f.suffix.lower() in {".jpg", ".jpeg", ".png"}]
+                if not image_files:
+                    print(f"⚠️ No images in {staff_dir}")
+                    continue
 
-        for filename in image_files:
-            image_path = os.path.join(input_group_dir, filename)
-            print(f"Processing: {filename}")
+                group_key = f"{pdf_dir.name}/{page_dir.name}/{group_dir.name}"
+                results[group_key] = {}
 
-            # Get staff line y-coordinates
-            staff_lines = get_staffLine_y_coordinate(image_path, isDisplay=isDisplay)
+                print(f"\n📄 Processing {group_key} ({len(image_files)} images)")
 
-            if not staff_lines:
-                print(f"⚠️ No staff lines detected in {filename}")
-                continue
+                for img_path in image_files:
+                    print(f"Processing: {img_path.name}")
+                    staff_lines = get_staffLine_y_coordinate(str(img_path), isDisplay=isDisplay)
 
-            # Calculate distance between staff lines (assuming 5 lines per staff)
-            if len(staff_lines) >= 2:
-                distance = calculate_staffLine_distance(staff_lines[0], staff_lines[-1])
-            else:
-                print(f"⚠️ Insufficient staff lines ({len(staff_lines)}) in {filename}, skipping distance calculation")
-                continue
+                    if not staff_lines or len(staff_lines) < 2:
+                        print(f"⚠️ Insufficient staff lines in {img_path.name}, skipping")
+                        continue
 
-            # Calculate staff line and space coordinates
-            staff_line_coords = calculate_staffs_y_coordinate(staff_lines[0], distance, staffType="line", extra=extra)
-            staff_space_coords = calculate_staffs_y_coordinate(staff_lines[0], distance, staffType="space", extra=extra)
+                    distance = calculate_staffLine_distance(staff_lines[0], staff_lines[-1])
+                    line_coords = calculate_staffs_y_coordinate(staff_lines[0], distance, "line", extra)
+                    space_coords = calculate_staffs_y_coordinate(staff_lines[0], distance, "space", extra)
 
-            # Store results
-            group_results[filename] = {
-                'staff_lines': staff_line_coords,
-                'staff_spaces': staff_space_coords
-            }
+                    results[group_key][img_path.name] = {
+                        "staff_lines": line_coords,
+                        "staff_spaces": space_coords
+                    }
 
-            # Optional: Save visualization or coordinates
-            output_image_path = os.path.join(output_group_dir, f"{os.path.splitext(filename)[0]}_staff_lines.jpg")
-            img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-            for _, y in staff_line_coords:
-                cv2.line(img, (0, y), (img.shape[1], y), (0), 1)
-            cv2.imwrite(output_image_path, img)
-            print(f"Saved visualization: {output_image_path}")
+                    # Optional visualization
+                    # vis_dir = output_folder / pdf_dir.name / page_dir.name / group_dir.name
+                    # vis_dir.mkdir(parents=True, exist_ok=True)
+                    img_gray = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+                    for _, y in line_coords:
+                        cv2.line(img_gray, (0, y), (img_gray.shape[1], y), 0, 1)
+                    # vis_out = vis_dir / f"{img_path.stem}_staff_lines.jpg"
+                    # cv2.imwrite(str(vis_out), img_gray)
+                    # print(f"📷 Saved: {vis_out.name}")
 
-        results[group_folder] = group_results
-
-    print("\n🎉 All group folders processed.")
+    print("\n✅ Finished processing all staffLines.")
     return results
