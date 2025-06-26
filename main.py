@@ -6,6 +6,7 @@ from processing.YOLO_model_loading import *
 from processing.organizing import *
 from processing.clefs_classification import *
 from processing.staffLine_seperating import *
+from processing.grouping_process import *
 # Base home path (absolute)
 home_path = Path("data_storage").resolve()
 
@@ -18,9 +19,10 @@ pureClefs_path = home_path / "pureClefs_path" # store clefs images
 measures_path = home_path / "measures_path" # store measure images
 cleanClefs_path = home_path / "cleanClefs_path" # store clefs images(staffLine removed)
 staffLines_path = home_path / "staffLines_path" # store staffLine images
+grouping_path = home_path/ "grouping_path" # Store clean_sep_clef and staffLine
 notations_path = home_path / "notations_path" # store notations
 
-path_list = [OG_path, binary_path, staffLines_path, grandStaff_path, cleanClefs_path, measures_path, notations_path, pureClefs_path]
+path_list = [OG_path, binary_path, staffLines_path, grandStaff_path, cleanClefs_path, measures_path, notations_path, pureClefs_path, grouping_path]
 
 pdf_dir = "violet_snow_for_orchestra-1.pdf" # For testing
 
@@ -53,6 +55,9 @@ def pipe_line():
     # Separate into G-F clef
     classify_and_organize_clefs(clef_cls_model, clef_sep_path, staffLine_only_path)
 
+    # Organize clefs and staffLine back to groups
+    staffLine_only_path = Path(staffLine_only_path)
+    group_all_sep_images_fixed(clef_sep_path, staffLine_only_path, grouping_path)
 
 
 # Run the pipeline

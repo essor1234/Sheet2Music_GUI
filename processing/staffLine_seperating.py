@@ -153,7 +153,7 @@ def process_groups_dataset(groups_path, output_noStaff_base_dir, output_staff_ba
 
     print("\n🎉 All group folders processed.")
 
-def separate_staff_from_clefs_flat(clef_input_root, output_noStaff_root, output_staff_root, filterVal=200):
+def separate_staff_from_clefs_flat(clef_input_root, output_noStaff_root, output_staff_root, filterVal=160):
     """
     Separates staff lines from clef crops in a flat `clef` subfolder under each page.
 
