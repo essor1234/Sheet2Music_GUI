@@ -1,8 +1,8 @@
 import os
 import shutil
 import re
+from pathlib import Path
 import cv2
-
 
 def organize_images_by_group(source_dir, output_dir, move=False):
     """
@@ -147,3 +147,72 @@ def clean_clef_crops(clef_root_folder, min_width=20, min_height=20, verbose=True
         print(f"\n🧹 Done cleaning clef crops. Total removed: {len(removed)}")
 
     return removed
+
+
+
+
+
+def remove_small_images(dir_path, min_width=20, min_height=20, verbose=False):
+    """
+    Remove small or unreadable images in a directory.
+    """
+    removed = []
+    for img_file in Path(dir_path).glob("*.[jp][pn]g"):
+        try:
+            img = cv2.imread(str(img_file))
+            if img is None or img.shape[1] < min_width or img.shape[0] < min_height:
+                img_file.unlink()
+                removed.append(str(img_file))
+                if verbose:
+                    print(f"🗑️ Removed: {img_file.name} (invalid or too small)")
+        except Exception as e:
+            print(f"⚠️ Error reading {img_file}: {e}")
+            continue
+    return removed
+
+
+def clean_measure_crops(grouping_path, min_width=20, min_height=20, verbose=True):
+    """
+    Cleans all measure crop folders in:
+        grouping_path/pdf_name/page_x/group_x/measures/measure/
+
+    Args:
+        grouping_path (str or Path): Root directory (e.g., 'data_storage/grouping_path')
+        min_width (int): Minimum allowed image width
+        min_height (int): Minimum allowed image height
+        verbose (bool): Print status info
+
+    Returns:
+        List[str]: Paths of removed images
+    """
+    grouping_path = Path(grouping_path)
+    if not grouping_path.exists():
+        print(f"❌ Path does not exist: {grouping_path}")
+        return []
+
+    removed_total = []
+
+    for pdf_dir in grouping_path.iterdir():
+        if not pdf_dir.is_dir():
+            continue
+        for page_dir in pdf_dir.glob("page_*"):
+            if not page_dir.is_dir():
+                continue
+            for group_dir in page_dir.glob("group_*"):
+                if not group_dir.is_dir():
+                    continue
+                measure_dir = group_dir / "measures" / "measure"
+                if not measure_dir.exists():
+                    if verbose:
+                        print(f"⛔ Skipping missing: {measure_dir}")
+                    continue
+                if verbose:
+                    print(f"\n🔍 Cleaning: {measure_dir}")
+                removed = remove_small_images(measure_dir, min_width, min_height, verbose)
+                removed_total.extend(removed)
+
+    if verbose:
+        print(f"\n✅ Measure cleaning complete. Total removed: {len(removed_total)}")
+
+    return removed_total
+

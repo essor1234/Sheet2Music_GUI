@@ -30,6 +30,7 @@ pdf_dir = "violet_snow_for_orchestra-1.pdf" # For testing
 grandStaff_model = "models/group_staff_seperating_2nd_v2.pt"
 clef_model = "models/clef_separating_v2.pt"
 clef_cls_model = "models/CNN_CLS/clef_doubleCheck_model_2nd.pkl"
+measure_model = "models/measure_seperating_v3.pt"
 def pipe_line():
     # Create requirement paths
     create_paths(path_list)
@@ -56,9 +57,13 @@ def pipe_line():
     classify_and_organize_clefs(clef_cls_model, clef_sep_path, staffLine_only_path)
 
     # Organize clefs and staffLine back to groups
-    staffLine_only_path = Path(staffLine_only_path)
     group_all_sep_images_fixed(clef_sep_path, staffLine_only_path, grouping_path)
 
+    # Measure separating
+    measures_separating_from_grouping(measure_model, grouping_path)
+
+    # Clean measures
+    clean_measure_crops(grouping_path, verbose=True)
 
 # Run the pipeline
 if __name__ == "__main__":

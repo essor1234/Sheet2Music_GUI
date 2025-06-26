@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import os
 import random
-
+from pathlib import Path
 
 def resize_with_padding(img, target_size=(640, 640)):
     """Resize image to target_size while preserving aspect ratio and adding padding."""
@@ -285,10 +285,48 @@ def clefs_separating(model_path, grandstaff_folder, output_root):
     return output_pdf_root
 
 
-def measures_separating(model_path, input_folder, output_folder):
-    group_folders = [f for f in os.listdir(input_folder) if
-                     os.path.isdir(os.path.join(input_folder, f)) and f.startswith('group_')]
-    for group_folder in group_folders:
-        input_group_dir = os.path.join(input_folder, group_folder)
-        loading_YOLO_model_v2(model_path, input_group_dir, output_folder, save_crops=True, conf=0.52, iou=0.3,
-                              sort_by_x=True)
+def measures_separating_from_grouping(model_path, grouping_path):
+    """
+    For each group_x/clefs/ folder, run measure detection and save results in group_x/measure/
+
+    Structure:
+        Input:  grouping_path/pdf_name/page_x/group_x/clefs/
+        Output: grouping_path/pdf_name/page_x/group_x/measure/
+
+    Returns:
+        List[Path]: Paths to all group-level measure folders created.
+    """
+
+    grouping_path = Path(grouping_path)
+
+    for pdf_dir in grouping_path.iterdir():
+        if not pdf_dir.is_dir():
+            continue
+        for page_dir in pdf_dir.glob("page_*"):
+            if not page_dir.is_dir():
+                continue
+
+            for group_dir in page_dir.glob("group_*"):
+                clef_input = group_dir / "clefs"
+                if not clef_input.exists():
+                    print(f"⚠️ Skipping: No 'clefs/' in {group_dir}")
+                    continue
+
+                # Output: group_x/measure/
+                measure_output = group_dir / "measures"
+                measure_output.mkdir(parents=True, exist_ok=True)
+
+                print(f"📍 Detecting measures for {clef_input} → {measure_output}")
+
+                # Run measure detection
+                loading_YOLO_model_v2(
+                    model_path,
+                    str(clef_input),
+                    str(measure_output),
+                    save_crops=True,
+                    conf=0.52,
+                    iou=0.3,
+                    sort_by_x=True
+                )
+
+
