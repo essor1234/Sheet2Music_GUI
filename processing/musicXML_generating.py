@@ -1,8 +1,8 @@
 import re
 from typing import Dict, List, Any
 from music21 import converter, environment
-
-
+import os
+from pathlib import Path
 def parse_measure_number(filename: str) -> int:
     """Extract measure number from filename."""
     try:
@@ -360,12 +360,53 @@ def display_or_play_score(musicxml_content: str, mode: str = 'auto', filename: s
 
 
 
-def process_musicXML_generating(pitch_results,file_name="temp_musicxml.musicxml", is_display=True, is_midi=True):
+
+def process_musicXML_generating(
+    pitch_results,
+    pdf_path=None,
+    output_dir="results",
+    is_display=True,
+    is_midi=True
+):
+    if not pitch_results:
+        print("✗ Empty pitch_results, nothing to save.")
+        return
+
+    # Extract pdf_name
+    if pdf_path:
+        pdf_name = Path(pdf_path).stem
+    else:
+        # Fallback to parsing from group_id
+        first_group_id = next(iter(pitch_results))
+        pdf_match = re.match(r'([^_]+(?:_[^_]+)*-\d+)_page_\d+_', first_group_id)
+        pdf_name = pdf_match.group(1) if pdf_match else "unknown_pdf"
+
+    # Create output folder
+    save_dir = os.path.join(output_dir, pdf_name)
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Define filenames
+    musicxml_filename = os.path.join(save_dir, f"{pdf_name}_results.musicxml")
+    midi_filename = os.path.join(save_dir, f"{pdf_name}_results.mid")
+
+    # Generate MusicXML content
     exact_xml = create_exact_musicxml(pitch_results)
-    if save_musicxml_file(exact_xml, file_name):
-        print("\n🎵 MusicXML file with pitch results created successfully!")
+
+    # Save MusicXML
+    if save_musicxml_file(exact_xml, musicxml_filename):
+        print(f"\n🎵 MusicXML saved to: {musicxml_filename}")
+
         if is_display:
-            display_or_play_score(exact_xml, mode='notation')
+            display_or_play_score(exact_xml, mode='notation', filename=musicxml_filename)
+
         if is_midi:
-            display_or_play_score(exact_xml, mode='midi')
+            try:
+                from music21 import converter
+                score = converter.parse(musicxml_filename)
+                score.write('midi', fp=midi_filename)
+                print(f"🎶 MIDI exported to: {midi_filename}")
+            except Exception as e:
+                print(f"✗ Failed to save MIDI: {e}")
+
+
 

@@ -7,6 +7,35 @@ n_ref = 1 # E4 or G2
 steps = ["C", "D", "E", "F", "G", "A", "B"]
 
 
+import os
+
+def parse_folder_info_from_filename(filename, grouping_path):
+    """
+    Extract the PDF name, page, group, and clefs directory from filename.
+
+    Args:
+        filename (str): Full filename
+        grouping_path (str): Root path to grouping folder
+
+    Returns:
+        full_group_path (str): Path like grouping_path/pdf_name/page_x/group_x/clefs
+    """
+    # Match example: violet_snow_for_orchestra-1_page_1_staff_group_0_clef_1_gClef_1_measure_0.jpg
+    match = re.match(r'(.+?)_page_(\d+)_staff_group_(\d+)_.*', filename)
+    if not match:
+        raise ValueError(f"Filename structure is invalid: {filename}")
+    pdf_name = match.group(1)
+    page_num = match.group(2)
+    group_num = match.group(3)
+
+    full_group_path = os.path.join(
+        grouping_path,
+        pdf_name,
+        f"page_{page_num}",
+        f"group_{group_num}",
+        "clefs"
+    )
+    return full_group_path
 
 def cal_bouding_box_center(bbox):
     """
@@ -79,19 +108,31 @@ def cal_octave(step_num, ref_idx, clef_type):
 
 
 def get_clef_type_and_base_filename(filename):
-    measure_match = re.match(r'(.+?)(?:_measure_\d+)?\.jpg$', filename)
-    base_filename = measure_match.group(1) + '.jpg' if measure_match else filename
-    filename_lower = filename.lower()
-    if 'gclef' in filename_lower:
-        return 'gClef', base_filename
-    elif 'fclef' in filename_lower:
-        return 'fClef', base_filename
-    print(f"Warning: Unknown clef type for {filename}")
-    return 'unknown', base_filename
+    """
+    Extract clef type and base staff filename from a note filename.
+    - Input: '..._clef_0_gClef_1_measure_0.jpg'
+    - Output: ('gClef', '..._clef_0.jpg')
+    """
+    match = re.match(r'(.+_clef_\d+)_([a-zA-Z]+)_\d+_measure_\d+\.jpg$', filename)
+    if match:
+        base_filename = match.group(1) + '.jpg'  # truncate after clef number
+        clef_type_raw = match.group(2).lower()
+        if clef_type_raw == 'gclef':
+            return 'gClef', base_filename
+        elif clef_type_raw == 'fclef':
+            return 'fClef', base_filename
+        else:
+            print(f"⚠️ Unknown clef type '{clef_type_raw}' in {filename}")
+            return 'unknown', base_filename
+    else:
+        print(f"⚠️ Filename doesn't match expected clef structure: {filename}")
+        return 'unknown', filename
 
 
-def calculate_note_pitches(note_results, staff_results, steps=None, default_n_ref=1,
-                           default_ref_idx=2):
+
+
+
+def calculate_note_pitches(note_results, staff_results, steps=None, default_n_ref=1, default_ref_idx=2):
     """
     Calculate pitch for each note using bounding box and staff line coordinates.
 
@@ -116,17 +157,17 @@ def calculate_note_pitches(note_results, staff_results, steps=None, default_n_re
             clef_type, base_filename = get_clef_type_and_base_filename(filename)
 
             if clef_type == 'gClef':
-                n_ref = 1  # Reference position for E4
-                ref_idx = 2  # E in steps
+                n_ref = 1  # E4 on bottom line
+                ref_idx = 2  # E
             elif clef_type == 'fClef':
-                n_ref = 1  # Reference position for G2
-                ref_idx = 4  # G in steps
+                n_ref = 1  # G2 on bottom line
+                ref_idx = 4  # G
             else:
                 n_ref = default_n_ref
                 ref_idx = default_ref_idx
 
             if base_filename not in staff_results[group]:
-                print(f"⚠️ Base image {base_filename} for {filename} not found in staff results, skipping")
+                print(f"⚠️ Base image {base_filename} for {filename} not found in staff results[{group}], skipping")
                 continue
 
             staff_lines = staff_results[group][base_filename]['staff_lines']
@@ -134,10 +175,10 @@ def calculate_note_pitches(note_results, staff_results, steps=None, default_n_re
                 print(f"⚠️ Insufficient staff lines for {base_filename}, skipping")
                 continue
 
-            # Ensure lastCoor is the bottom line (largest y), firstCoor is the top line (smallest y)
+            # Sort staff lines: bottom (largest y) to top (smallest y)
             staff_lines_sorted = sorted(staff_lines, key=lambda x: x[1], reverse=True)
-            lastCoor = staff_lines_sorted[0][1]  # Bottom line (largest y)
-            firstCoor = staff_lines_sorted[-1][1]  # Top line (smallest y)
+            lastCoor = staff_lines_sorted[0][1]
+            firstCoor = staff_lines_sorted[-1][1]
             distance = int((lastCoor - firstCoor) / 4)
 
             note_pitches = []
@@ -149,7 +190,7 @@ def calculate_note_pitches(note_results, staff_results, steps=None, default_n_re
                 _, y_center = cal_bouding_box_center(bbox)
                 position = cal_n_position(lastCoor, y_center, distance)
 
-                n_note = round(position)  # Snap to nearest integer n
+                n_note = round(position)
                 step_num = cal_step_num(n_note, n_ref)
                 step = get_step_idx(steps, step_num, ref_idx)
                 octave = cal_octave(step_num, ref_idx, clef_type)
@@ -167,17 +208,18 @@ def calculate_note_pitches(note_results, staff_results, steps=None, default_n_re
     return pitch_results
 
 
+
+
 def process_cal_note_pitch(note_results, staff_results, steps, print_enable=False):
     pitch_results = calculate_note_pitches(
         note_results=note_results,
         staff_results=staff_results,
         steps=steps,
-        default_n_ref=1,  # Default for G-clef
-        default_ref_idx=2,  # Default for G-clef
+        default_n_ref=1,
+        default_ref_idx=2
     )
 
     if print_enable:
-        # Step 4: Print results
         for group, images in pitch_results.items():
             print(f"\nGroup: {group}")
             for filename, notes in images.items():
@@ -187,3 +229,4 @@ def process_cal_note_pitch(note_results, staff_results, steps, print_enable=Fals
                           f"score={note['score']:.2f}, pitch={note['step']}{note['octave']}")
 
     return pitch_results
+

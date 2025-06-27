@@ -2,6 +2,105 @@ import os
 import shutil
 import re
 from pathlib import Path
+from typing import Dict
+
+
+def organize_grouped_images_by_type_with_clef(
+    staff_source_dir: str,
+    clef_source_dir: str,
+    output_root: str,
+    move: bool = False,
+):
+    """
+    Organize staff line images into structured output folders based on clef names.
+
+    Each staff image is matched with a clef image by base name.
+    The clef label (gClef or fClef) is extracted from the clef filename and appended to the staff filename.
+
+    Output structure:
+        output_root/pdf_name/page_x/group_x/staffLines/filename_gClef.jpg
+
+    If no clef match is found, "_unknown" is added to the filename.
+    """
+    staff_source_dir = Path(staff_source_dir)
+    clef_source_dir = Path(clef_source_dir)
+    output_root = Path(output_root)
+
+    print("📂 Organizing staff line images with clef labels...")
+
+    # Step 1: Build clef mapping: base name → clef label
+    clef_map: Dict[str, str] = {}
+    for clef_img in clef_source_dir.rglob("*.*"):
+        if clef_img.suffix.lower() not in {".jpg", ".png"}:
+            continue
+        if clef_img.parent.name not in {"fClef", "gClef"}:
+            continue
+
+        clef_label = clef_img.parent.name  # 'fClef' or 'gClef'
+        clef_base = clef_img.stem
+        # Remove the trailing _gClef_1 or _fClef_1 or similar
+        match = re.match(r"(.+?)_(?:gClef|fClef)(?:_\d+)?$", clef_base)
+
+        if match:
+            staff_base = match.group(1)
+        else:
+            staff_base = clef_base
+        clef_map[staff_base] = clef_label
+
+    print(f"🔍 Found {len(clef_map)} clef-to-staff mappings.")
+
+    # Step 2: Process staff images
+    staff_images = [
+        f for f in staff_source_dir.rglob("*.*")
+        if f.suffix.lower() in {".jpg", ".png"}
+    ]
+
+    if not staff_images:
+        print(f"⚠️ No staff line images found in {staff_source_dir}")
+        return
+
+    print(f"📦 Found {len(staff_images)} staff images to organize.")
+
+    for idx, staff_path in enumerate(staff_images):
+        try:
+            fname = staff_path.name
+            staff_base = staff_path.stem
+
+            # Find page and pdf_name from path
+            parts = staff_path.parts
+            page_name = next(p for p in parts if p.startswith("page_"))
+            pdf_index = parts.index(page_name) - 1
+            pdf_name = parts[pdf_index]
+
+            # Find group number
+            match = re.search(r"group_(\d+)", fname)
+            if not match:
+                print(f"⚠️ Skipping {fname}: No group number found")
+                continue
+            group_id = f"group_{match.group(1)}"
+
+            # Find clef label for this staff line
+            clef_label = clef_map.get(staff_base, "unknown")
+            new_name = f"{staff_base}_{clef_label}{staff_path.suffix}"
+
+            # Output path
+            target_dir = output_root / pdf_name / page_name / group_id / "staffLines"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            dest_path = target_dir / new_name
+
+            if move:
+                shutil.move(str(staff_path), str(dest_path))
+                action = "Moved"
+            else:
+                shutil.copy2(staff_path, dest_path)
+                action = "Copied"
+
+            print(f"[{idx + 1}/{len(staff_images)}] {action}: {fname} → {new_name}")
+
+        except Exception as e:
+            print(f"❌ Error processing {staff_path}: {e}")
+
+    print("\n✅ Staff line organization with clef names complete.")
 
 def organize_grouped_images_by_type_fixed(source_dir, output_root, data_type="clefs", move=False):
     """
@@ -150,8 +249,17 @@ def group_all_sep_images_fixed(clef_sep_path, staffLine_only_path, grouping_path
     """
     print("📂 Organizing clef images...")
     organize_grouped_images_by_type_fixed(clef_sep_path, grouping_path, data_type="clefs", move=False)
-
+    #
     print("\n📂 Organizing staff line images...")
-    organize_grouped_images_by_type_fixed(staffLine_only_path, grouping_path, data_type="staffLines", move=False)
+    # organize_grouped_images_by_type_fixed(staffLine_only_path, grouping_path, data_type="staffLines", move=False)
+    #
+    # print("\n✅ All grouping completed.")
+    organize_grouped_images_by_type_with_clef(
+        staff_source_dir=staffLine_only_path,
+        clef_source_dir=clef_sep_path,
+        output_root=grouping_path,
+        move=False
+    )
 
-    print("\n✅ All grouping completed.")
+
+
