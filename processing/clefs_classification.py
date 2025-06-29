@@ -15,7 +15,7 @@ def load_fastai_model(model_path):
     print(f"✅ Model loaded: {model_path}")
     return model
 
-def crop_left_region(img, padding=10, min_width=100, min_size=20):
+def crop_left_region(img, padding=5, min_width=80, min_size=20):
     h, w = img.shape[:2]
     x_max = min(w, min_width + padding)
     crop = img[0:h, 0:x_max]

@@ -4,6 +4,8 @@ import numpy as np
 import os
 import random
 from pathlib import Path
+from torchvision.ops import nms
+import torch
 
 def resize_with_padding(img, target_size=(640, 640)):
     """Resize image to target_size while preserving aspect ratio and adding padding."""
@@ -142,7 +144,15 @@ def loading_YOLO_model_v2(model_path, input_source, output_folder=None, conf=0.7
             print(f"⚠️ Skipping due to invalid resize: {image_file}")
             continue
 
-        results = model.predict(source=img_resized, conf=conf, iou=iou, imgsz=640)
+        # results = model.predict(source=img_resized, conf=conf, iou=iou, imgsz=640)
+        results = model.predict(source=img_resized, conf=conf, iou=iou, imgsz=640, nms=False)
+
+        for result in results:
+            if result.boxes is not None and len(result.boxes) > 0:
+                boxes_tensor = torch.tensor([box.xyxy[0].tolist() for box in result.boxes])
+                scores_tensor = torch.tensor([box.conf.item() for box in result.boxes])
+                keep = nms(boxes_tensor, scores_tensor, iou_threshold=iou)
+                filtered_boxes = [result.boxes[i] for i in keep]
 
         annotated_img = img_resized.copy()
         boxes_detected = False
@@ -279,7 +289,7 @@ def clefs_separating(model_path, grandstaff_folder, output_root):
             save_crops=True,
             sort_by_y=True,
             conf=0.52,
-            iou=0.8
+            iou=0.7
         )
 
     return output_pdf_root

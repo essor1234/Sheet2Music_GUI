@@ -110,12 +110,17 @@ def cal_octave(step_num, ref_idx, clef_type):
 def get_clef_type_and_base_filename(filename):
     """
     Extract clef type and base staff filename from a note filename.
-    - Input: '..._clef_0_gClef_1_measure_0.jpg'
-    - Output: ('gClef', '..._clef_0.jpg')
+    Works with filenames like:
+    - '..._clef_0_gClef_measure_0.jpg'
+    - '..._clef_0_gClef_1_measure_0.jpg'
+
+    Returns:
+        - clef type (e.g., 'gClef', 'fClef', or 'unknown')
+        - base filename of the staff image to match (e.g., '..._clef_0_gClef.jpg')
     """
-    match = re.match(r'(.+_clef_\d+)_([a-zA-Z]+)_\d+_measure_\d+\.jpg$', filename)
+    match = re.match(r'(.+_clef_\d+)_([a-zA-Z]+)(?:_\d+)?_measure_\d+\.jpg$', filename)
     if match:
-        base_filename = match.group(1) + '.jpg'  # truncate after clef number
+        base_filename = f"{match.group(1)}_{match.group(2)}.jpg"
         clef_type_raw = match.group(2).lower()
         if clef_type_raw == 'gclef':
             return 'gClef', base_filename
@@ -127,6 +132,7 @@ def get_clef_type_and_base_filename(filename):
     else:
         print(f"⚠️ Filename doesn't match expected clef structure: {filename}")
         return 'unknown', filename
+
 
 
 

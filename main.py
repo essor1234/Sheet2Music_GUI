@@ -77,14 +77,15 @@ def pipe_line():
 
     # Staff Localization
     staff_results = process_group_staffs_from_grouping(grouping_path)
-    # # print(staff_results)
-    # # Note Localization
-    # note_results = process_predict_notes_from_grouping(note_predict_model, grouping_path, note_bbox, notations_path)
-    # # print(note_results)
+    # print(staff_results)
+    # Note Localization
+    note_results = process_predict_notes_from_grouping(note_predict_model, grouping_path, note_bbox, notations_path)
+    # print(note_results)
     # # Pitch Calculate
-    # pitch_results = process_cal_note_pitch(note_results, staff_results, steps, print_enable=True)
-    #
-    # process_musicXML_generating(pitch_results,pdf_path=pdf_dir, output_dir=results_path, is_display=True, is_midi=True)
+    pitch_results = process_cal_note_pitch(note_results, staff_results, steps, print_enable=True)
+    # print(staff_results)
+    # print(pitch_results)
+    process_musicXML_generating(pitch_results,pdf_path=pdf_dir, output_dir=results_path, is_display=True, is_midi=True)
     #
     #
 

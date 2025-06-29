@@ -37,7 +37,7 @@ def pdf_to_images(pdf_path, output_root, image_format='png', dpi=150):
 
 # Wrapper
 def pdf2img(pdf_path, output_root):
-    return pdf_to_images(pdf_path, output_root)
+    return pdf_to_images(pdf_path, output_root, dpi=400)
 
 
 
