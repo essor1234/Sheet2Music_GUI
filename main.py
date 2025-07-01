@@ -12,6 +12,7 @@ from processing.note_localization import *
 from processing.calculate_note_ptich import *
 from processing.note_grouping import *
 from processing.musicXML_generating import *
+from processing.MXL_gen2 import *
 # Base home path (absolute)
 home_path = Path("data_storage").resolve()
 
@@ -31,7 +32,7 @@ note_bbox = home_path / "note_bbox"
 
 path_list = [OG_path, binary_path, staffLines_path, grandStaff_path, cleanClefs_path, measures_path, notations_path, pureClefs_path, grouping_path, note_bbox, results_path]
 
-pdf_dir = "violet_snow_for_orchestra-1.pdf" # For testing
+pdf_dir = "twinkle-twinkle-little-star-piano-solo.pdf" # For testing
 
 
 grandStaff_model = "models/group_staff_seperating_2nd_v2.pt"
@@ -60,7 +61,7 @@ def pipe_line():
     # Clean clefs
     clean_clef_crops(clefs_sep_path, verbose=True)
 
-    # StaffLine seperating
+    # StaffLine separating
     clef_sep_path, staffLine_only_path = separate_staff_from_clefs_flat(clefs_sep_path, cleanClefs_path, staffLines_path)
 
     # Separate into G-F clef
@@ -77,15 +78,14 @@ def pipe_line():
 
     # Staff Localization
     staff_results = process_group_staffs_from_grouping(grouping_path)
-    # print(staff_results)
+    print(staff_results)
     # Note Localization
     note_results = process_predict_notes_from_grouping(note_predict_model, grouping_path, note_bbox, notations_path)
     # print(note_results)
     # # Pitch Calculate
     pitch_results = process_cal_note_pitch(note_results, staff_results, steps, print_enable=True)
-    # print(staff_results)
     # print(pitch_results)
-    process_musicXML_generating(pitch_results,pdf_path=pdf_dir, output_dir=results_path, is_display=True, is_midi=True)
+    process_musicXML_generating1(pitch_results,pdf_path=pdf_dir, output_dir=results_path, is_display=True, is_midi=True)
     #
     #
 

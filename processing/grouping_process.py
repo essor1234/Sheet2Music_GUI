@@ -260,6 +260,39 @@ def group_all_sep_images_fixed(clef_sep_path, staffLine_only_path, grouping_path
         output_root=grouping_path,
         move=False
     )
+#======================================GROUPING FOR PITCH RESULT==========================
+
+import re
+from collections import defaultdict
+
+
+def group_notes_by_page_group_measure_clef(nested_results):
+    structure = defaultdict(  # page
+        lambda: defaultdict(  # group
+            lambda: defaultdict(  # measure
+                lambda: defaultdict(list)  # clef: list of notes
+            )
+        )
+    )
+
+    for group_key, group_data in nested_results.items():
+        for filename, notes in group_data.items():
+            # Example: twinkle-twinkle-little-star-piano-solo_page_1_staff_group_0_clef_1_gClef_measure_3.jpg
+            match = re.search(r'page_(\d+).*?group_(\d+).*?clef_\d+_(gClef|fClef)_measure_(\d+)', filename)
+            if not match:
+                print(f"⚠️ Skipping: Filename not matched → {filename}")
+                continue
+
+            page, group, clef, measure = match.groups()
+            page_key = f"page_{page}"
+            group_key = f"group_{group}"
+            measure_key = f"measure_{measure}"
+            clef_key = clef
+
+            structure[page_key][group_key][measure_key][clef_key].extend(notes)
+
+    return structure
+
 
 
 

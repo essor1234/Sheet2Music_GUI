@@ -53,18 +53,22 @@ def cal_bouding_box_center(bbox):
     return (x_center, y_center)
 
 
+# def cal_n_position(lastCoor, y_center, distance):
+#     """
+#     Calculate note position relative to the bottom staff line with floating-point precision.
+#
+#     Args:
+#         lastCoor (float): Y-coordinate of the bottom staff line
+#         y_center (float): Y-center of the note's bounding box
+#         distance (float): Average distance between staff lines
+#
+#     Returns:
+#         float: Position relative to the staff
+#     """
+#     position = (y_center - (lastCoor + distance / 2)) / (distance / 2) * -1
+#     return position
+
 def cal_n_position(lastCoor, y_center, distance):
-    """
-    Calculate note position relative to the bottom staff line with floating-point precision.
-
-    Args:
-        lastCoor (float): Y-coordinate of the bottom staff line
-        y_center (float): Y-center of the note's bounding box
-        distance (float): Average distance between staff lines
-
-    Returns:
-        float: Position relative to the staff
-    """
     position = (lastCoor + distance / 2 - y_center) / (distance / 2)
     return position
 
@@ -138,13 +142,83 @@ def get_clef_type_and_base_filename(filename):
 
 
 
+# def calculate_note_pitches(note_results, staff_results, steps=None, default_n_ref=1, default_ref_idx=2):
+#     """
+#     Calculate pitch for each note using bounding box and staff line coordinates.
+#
+#     Returns:
+#         dict: {group_folder: {filename: [{'bbox': ..., 'step': ..., 'octave': ...}, ...]}}
+#     """
+#     if steps is None:
+#         steps = ["C", "D", "E", "F", "G", "A", "B"]
+#     pitch_results = {}
+#
+#     for group in note_results:
+#         if group not in staff_results:
+#             print(f"⚠️ Group {group} not found in staff results, skipping")
+#             continue
+#
+#         pitch_results[group] = {}
+#
+#         for filename, note_preds in note_results[group].items():
+#             if filename.endswith('_staff_lines.jpg'):
+#                 continue
+#
+#             clef_type, base_filename = get_clef_type_and_base_filename(filename)
+#
+#             if clef_type == 'gClef':
+#                 n_ref = 1  # E4 on bottom line
+#                 ref_idx = 2  # E
+#             elif clef_type == 'fClef':
+#                 n_ref = 1  # G2 on bottom line
+#                 ref_idx = 4  # G
+#             else:
+#                 n_ref = default_n_ref
+#                 ref_idx = default_ref_idx
+#
+#             if base_filename not in staff_results[group]:
+#                 print(f"⚠️ Base image {base_filename} for {filename} not found in staff results[{group}], skipping")
+#                 continue
+#
+#             staff_lines = staff_results[group][base_filename]['staff_lines']
+#             if not staff_lines or len(staff_lines) < 2:
+#                 print(f"⚠️ Insufficient staff lines for {base_filename}, skipping")
+#                 continue
+#
+#             # Sort staff lines: bottom (largest y) to top (smallest y)
+#             staff_lines_sorted = sorted(staff_lines, key=lambda x: x[1], reverse=True)
+#             lastCoor = staff_lines_sorted[0][1]
+#             firstCoor = staff_lines_sorted[-1][1]
+#             distance = int((lastCoor - firstCoor) / 4)
+#
+#             note_pitches = []
+#             for note in note_preds:
+#                 bbox = note['bbox']
+#                 label = note['label']
+#                 score = note['score']
+#
+#                 _, y_center = cal_bouding_box_center(bbox)
+#                 position = cal_n_position(lastCoor, y_center, distance)
+#
+#                 n_note = round(position)
+#                 if position < 0 and abs(position) > 0.5:  # Below staff
+#                     n_note = int(position) - 1
+#                 step_num = cal_step_num(n_note, n_ref)
+#                 step = get_step_idx(steps, step_num, ref_idx)
+#                 octave = cal_octave(step_num, ref_idx, clef_type)
+#
+#                 note_pitches.append({
+#                     'bbox': bbox,
+#                     'label': label,
+#                     'score': score,
+#                     'step': step,
+#                     'octave': octave
+#                 })
+#
+#             pitch_results[group][filename] = note_pitches
+#
+#     return pitch_results
 def calculate_note_pitches(note_results, staff_results, steps=None, default_n_ref=1, default_ref_idx=2):
-    """
-    Calculate pitch for each note using bounding box and staff line coordinates.
-
-    Returns:
-        dict: {group_folder: {filename: [{'bbox': ..., 'step': ..., 'octave': ...}, ...]}}
-    """
     if steps is None:
         steps = ["C", "D", "E", "F", "G", "A", "B"]
     pitch_results = {}
@@ -181,7 +255,6 @@ def calculate_note_pitches(note_results, staff_results, steps=None, default_n_re
                 print(f"⚠️ Insufficient staff lines for {base_filename}, skipping")
                 continue
 
-            # Sort staff lines: bottom (largest y) to top (smallest y)
             staff_lines_sorted = sorted(staff_lines, key=lambda x: x[1], reverse=True)
             lastCoor = staff_lines_sorted[0][1]
             firstCoor = staff_lines_sorted[-1][1]
@@ -212,7 +285,6 @@ def calculate_note_pitches(note_results, staff_results, steps=None, default_n_re
             pitch_results[group][filename] = note_pitches
 
     return pitch_results
-
 
 
 
