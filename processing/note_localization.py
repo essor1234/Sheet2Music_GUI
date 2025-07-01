@@ -578,12 +578,12 @@ def process_predict_notes_from_grouping(model_path, grouping_path, bbox_img_dir,
                     model_path=model_path,
                     groups_path=str(measure_folder),
                     output_base_dir=str(output_notes_path / pdf_dir.name / page_dir.name / group_dir.name),
-                    conf_threshold=0.6,
+                    conf_threshold=0.72,
                     save_crops_enabled=True,
-                    input_resize_factor=2.8,
+                    input_resize_factor=3.3,
                     enhance_noteheads=True,
                     visualize_resized=False,  # or 'display'
-                    blur_strength=5,
+                    blur_strength=8,
                     save_bbox_images=True,
                     bbox_images_dir=str(bbox_img_dir / pdf_dir.name / page_dir.name / group_dir.name)
                 )
