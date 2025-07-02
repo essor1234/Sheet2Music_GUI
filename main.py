@@ -13,6 +13,7 @@ from processing.calculate_note_ptich import *
 from processing.note_grouping import *
 from processing.musicXML_generating import *
 from processing.MXL_gen2 import *
+from processing.MXL_gen3 import *
 # Base home path (absolute)
 home_path = Path("data_storage").resolve()
 
@@ -71,21 +72,26 @@ def pipe_line():
     group_all_sep_images_fixed(clef_sep_path, staffLine_only_path, grouping_path)
     #
     # Measure separating
-    measures_separating_from_grouping(measure_model, grouping_path)
+    measures_separating_from_grouping(measure_model, grouping_path, pdf_dir)
 
     # Clean measures
-    clean_measure_crops(grouping_path, verbose=True)
+    clean_measure_crops(grouping_path,pdf_dir, verbose=True)
 
     # Staff Localization
-    staff_results = process_group_staffs_from_grouping(grouping_path)
-    print(staff_results)
+    staff_results = process_group_staffs_from_grouping(grouping_path, pdf_dir)
+    # print(staff_results)
     # Note Localization
-    note_results = process_predict_notes_from_grouping(note_predict_model, grouping_path, note_bbox, notations_path)
+    note_results = process_predict_notes_from_grouping(note_predict_model, pdf_dir, grouping_path, note_bbox, notations_path)
     # print(note_results)
     # # Pitch Calculate
     pitch_results = process_cal_note_pitch(note_results, staff_results, steps, print_enable=True)
     # print(pitch_results)
-    process_musicXML_generating1(pitch_results,pdf_path=pdf_dir, output_dir=results_path, is_display=True, is_midi=True)
+
+    final_result = group_notes_by_page_group_measure_clef(pitch_results)
+    # final_result
+    # process_musicXML_generating1(pitch_results,pdf_path=pdf_dir, output_dir=results_path, is_display=True, is_midi=True)
+    create_exact_musicxml_from_nested_results(final_result, pdf_path=pdf_dir, output_dir=results_path, is_display=True,
+                                              is_midi=True)
     #
     #
 

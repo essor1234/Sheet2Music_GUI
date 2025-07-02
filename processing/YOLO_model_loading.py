@@ -314,49 +314,49 @@ def clefs_separating(model_path, grandstaff_folder, output_root):
     return output_pdf_root
 
 
-def measures_separating_from_grouping(model_path, grouping_path):
+def measures_separating_from_grouping(model_path, grouping_path, pdf_path):
     """
-    For each group_x/clefs/ folder, run measure detection and save results in group_x/measure/
+    Detects and crops measures from clefs for the specified PDF under grouping_path.
 
-    Structure:
-        Input:  grouping_path/pdf_name/page_x/group_x/clefs/
-        Output: grouping_path/pdf_name/page_x/group_x/measure/
+    Input:  grouping_path/pdf_name/page_x/group_x/clefs/
+    Output: grouping_path/pdf_name/page_x/group_x/measures/
 
-    Returns:
-        List[Path]: Paths to all group-level measure folders created.
+    Args:
+        model_path (str): Path to the YOLO model for measure detection.
+        grouping_path (str or Path): Root directory containing PDF folders.
+        pdf_name (str): Name of the PDF (used as folder name).
     """
+    pdf_name = os.path.splitext(os.path.basename(pdf_path))[0]
+    pdf_dir = Path(grouping_path) / pdf_name
+    if not pdf_dir.exists():
+        print(f"❌ PDF directory not found: {pdf_dir}")
+        return
 
-    grouping_path = Path(grouping_path)
-
-    for pdf_dir in grouping_path.iterdir():
-        if not pdf_dir.is_dir():
+    for page_dir in pdf_dir.glob("page_*"):
+        if not page_dir.is_dir():
             continue
-        for page_dir in pdf_dir.glob("page_*"):
-            if not page_dir.is_dir():
+
+        for group_dir in page_dir.glob("group_*"):
+            clef_input = group_dir / "clefs"
+            if not clef_input.exists():
+                print(f"⚠️ Skipping: No 'clefs/' in {group_dir}")
                 continue
 
-            for group_dir in page_dir.glob("group_*"):
-                clef_input = group_dir / "clefs"
-                if not clef_input.exists():
-                    print(f"⚠️ Skipping: No 'clefs/' in {group_dir}")
-                    continue
+            measure_output = group_dir / "measures"
+            measure_output.mkdir(parents=True, exist_ok=True)
 
-                # Output: group_x/measure/
-                measure_output = group_dir / "measures"
-                measure_output.mkdir(parents=True, exist_ok=True)
+            print(f"📍 Detecting measures: {clef_input} → {measure_output}")
 
-                print(f"📍 Detecting measures for {clef_input} → {measure_output}")
+            loading_YOLO_model_v2(
+                model_path=model_path,
+                input_source=str(clef_input),
+                output_folder=str(measure_output),
+                save_crops=True,
+                conf=0.52,
+                iou=0.1,
+                sort_by_x=True,
+                maximize_top_bottom=True
+            )
 
-                # Run measure detection
-                loading_YOLO_model_v2(
-                    model_path,
-                    str(clef_input),
-                    str(measure_output),
-                    save_crops=True,
-                    conf=0.52,
-                    iou=0.1,
-                    sort_by_x=True,
-                    maximize_top_bottom=True
-                )
 
 

@@ -171,48 +171,51 @@ def remove_small_images(dir_path, min_width=20, min_height=20, verbose=False):
     return removed
 
 
-def clean_measure_crops(grouping_path, min_width=20, min_height=20, verbose=True):
+def clean_measure_crops(grouping_path, pdf_path, min_width=20, min_height=20, verbose=True):
     """
-    Cleans all measure crop folders in:
+    Cleans all measure crops under:
         grouping_path/pdf_name/page_x/group_x/measures/measure/
 
     Args:
         grouping_path (str or Path): Root directory (e.g., 'data_storage/grouping_path')
+        pdf_name (str): Name of the PDF folder to clean
         min_width (int): Minimum allowed image width
         min_height (int): Minimum allowed image height
-        verbose (bool): Print status info
+        verbose (bool): Whether to print cleaning progress
 
     Returns:
         List[str]: Paths of removed images
     """
-    grouping_path = Path(grouping_path)
-    if not grouping_path.exists():
-        print(f"❌ Path does not exist: {grouping_path}")
+    pdf_name = os.path.splitext(os.path.basename(pdf_path))[0]
+    pdf_dir = Path(grouping_path) / pdf_name
+    if not pdf_dir.exists():
+        print(f"❌ PDF directory does not exist: {pdf_dir}")
         return []
 
     removed_total = []
 
-    for pdf_dir in grouping_path.iterdir():
-        if not pdf_dir.is_dir():
+    for page_dir in pdf_dir.glob("page_*"):
+        if not page_dir.is_dir():
             continue
-        for page_dir in pdf_dir.glob("page_*"):
-            if not page_dir.is_dir():
+        for group_dir in page_dir.glob("group_*"):
+            if not group_dir.is_dir():
                 continue
-            for group_dir in page_dir.glob("group_*"):
-                if not group_dir.is_dir():
-                    continue
-                measure_dir = group_dir / "measures" / "measure"
-                if not measure_dir.exists():
-                    if verbose:
-                        print(f"⛔ Skipping missing: {measure_dir}")
-                    continue
+
+            measure_dir = group_dir / "measures" / "measure"
+            if not measure_dir.exists():
                 if verbose:
-                    print(f"\n🔍 Cleaning: {measure_dir}")
-                removed = remove_small_images(measure_dir, min_width, min_height, verbose)
-                removed_total.extend(removed)
+                    print(f"⛔ Skipping missing: {measure_dir}")
+                continue
+
+            if verbose:
+                print(f"\n🔍 Cleaning: {measure_dir}")
+
+            removed = remove_small_images(measure_dir, min_width, min_height, verbose)
+            removed_total.extend(removed)
 
     if verbose:
         print(f"\n✅ Measure cleaning complete. Total removed: {len(removed_total)}")
 
     return removed_total
+
 

@@ -78,7 +78,7 @@ def calculate_staffs_y_coordinate(firstLineCoor, distance, staffType="line", ext
     return staffList
 
 
-def process_group_staffs_from_grouping(grouping_path, isDisplay=False, extra=None):
+def process_group_staffs_from_grouping(grouping_path,pdf_path, isDisplay=False, extra=None):
     """
     Process staff line detection inside grouping_path/.../group_x/staffLines/.
 
@@ -91,58 +91,58 @@ def process_group_staffs_from_grouping(grouping_path, isDisplay=False, extra=Non
     Returns:
         dict: Nested dictionary with coordinates for each staff group
     """
-    grouping_path = Path(grouping_path)
+    pdf_name = os.path.splitext(os.path.basename(pdf_path))[0]
+    pdf_dir = Path(grouping_path) / pdf_name
+    # print(grouping_path)
     # output_folder = Path(output_folder)
     # output_folder.mkdir(parents=True, exist_ok=True)
 
     results = {}
 
-    for pdf_dir in grouping_path.iterdir():
-        if not pdf_dir.is_dir():
-            continue
-        for page_dir in pdf_dir.glob("page_*"):
-            for group_dir in page_dir.glob("group_*"):
-                staff_dir = group_dir / "staffLines"
-                if not staff_dir.exists():
-                    print(f"⚠️ Skipping: No staffLines folder in {group_dir}")
+
+    for page_dir in pdf_dir.glob("page_*"):
+        for group_dir in page_dir.glob("group_*"):
+            staff_dir = group_dir / "staffLines"
+            if not staff_dir.exists():
+                print(f"⚠️ Skipping: No staffLines folder in {group_dir}")
+                continue
+
+            image_files = [f for f in staff_dir.glob("*") if f.suffix.lower() in {".jpg", ".jpeg", ".png"}]
+            if not image_files:
+                print(f"⚠️ No images in {staff_dir}")
+                continue
+
+            group_key = f"{pdf_dir.name}/{page_dir.name}/{group_dir.name}"
+            results[group_key] = {}
+
+            print(f"\n📄 Processing {group_key} ({len(image_files)} images)")
+
+            for img_path in image_files:
+                print(f"Processing: {img_path.name}")
+                staff_lines = get_staffLine_y_coordinate(str(img_path), isDisplay=isDisplay)
+
+                if not staff_lines or len(staff_lines) < 2:
+                    print(f"⚠️ Insufficient staff lines in {img_path.name}, skipping")
                     continue
 
-                image_files = [f for f in staff_dir.glob("*") if f.suffix.lower() in {".jpg", ".jpeg", ".png"}]
-                if not image_files:
-                    print(f"⚠️ No images in {staff_dir}")
-                    continue
+                distance = calculate_staffLine_distance(staff_lines[0], staff_lines[-1])
+                line_coords = calculate_staffs_y_coordinate(staff_lines[0], distance, "line", extra)
+                space_coords = calculate_staffs_y_coordinate(staff_lines[0], distance, "space", extra)
 
-                group_key = f"{pdf_dir.name}/{page_dir.name}/{group_dir.name}"
-                results[group_key] = {}
+                results[group_key][img_path.name] = {
+                    "staff_lines": line_coords,
+                    "staff_spaces": space_coords
+                }
 
-                print(f"\n📄 Processing {group_key} ({len(image_files)} images)")
-
-                for img_path in image_files:
-                    print(f"Processing: {img_path.name}")
-                    staff_lines = get_staffLine_y_coordinate(str(img_path), isDisplay=isDisplay)
-
-                    if not staff_lines or len(staff_lines) < 2:
-                        print(f"⚠️ Insufficient staff lines in {img_path.name}, skipping")
-                        continue
-
-                    distance = calculate_staffLine_distance(staff_lines[0], staff_lines[-1])
-                    line_coords = calculate_staffs_y_coordinate(staff_lines[0], distance, "line", extra)
-                    space_coords = calculate_staffs_y_coordinate(staff_lines[0], distance, "space", extra)
-
-                    results[group_key][img_path.name] = {
-                        "staff_lines": line_coords,
-                        "staff_spaces": space_coords
-                    }
-
-                    # Optional visualization
-                    # vis_dir = output_folder / pdf_dir.name / page_dir.name / group_dir.name
-                    # vis_dir.mkdir(parents=True, exist_ok=True)
-                    img_gray = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
-                    for _, y in line_coords:
-                        cv2.line(img_gray, (0, y), (img_gray.shape[1], y), 0, 1)
-                    # vis_out = vis_dir / f"{img_path.stem}_staff_lines.jpg"
-                    # cv2.imwrite(str(vis_out), img_gray)
-                    # print(f"📷 Saved: {vis_out.name}")
+                # Optional visualization
+                # vis_dir = output_folder / pdf_dir.name / page_dir.name / group_dir.name
+                # vis_dir.mkdir(parents=True, exist_ok=True)
+                img_gray = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+                for _, y in line_coords:
+                    cv2.line(img_gray, (0, y), (img_gray.shape[1], y), 0, 1)
+                # vis_out = vis_dir / f"{img_path.stem}_staff_lines.jpg"
+                # cv2.imwrite(str(vis_out), img_gray)
+                # print(f"📷 Saved: {vis_out.name}")
 
     print("\n✅ Finished processing all staffLines.")
     return results

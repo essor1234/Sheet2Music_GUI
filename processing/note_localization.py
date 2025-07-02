@@ -542,7 +542,7 @@ def predict_notes(model_path, groups_path, model_type='fasterrcnn_resnet50_fpn_v
     return results
 
 
-def process_predict_notes_from_grouping(model_path, grouping_path, bbox_img_dir, output_notes_path):
+def process_predict_notes_from_grouping(model_path,pdf_path, grouping_path, bbox_img_dir, output_notes_path):
     """
     Traverse grouping_path/.../group_x/measures/measure/ folders to predict notes.
 
@@ -555,40 +555,39 @@ def process_predict_notes_from_grouping(model_path, grouping_path, bbox_img_dir,
     Returns:
         Dict: Aggregated results from all groups
     """
-    grouping_path = Path(grouping_path)
+    pdf_name = os.path.splitext(os.path.basename(pdf_path))[0]
+    pdf_dir = Path(grouping_path) / pdf_name
     bbox_img_dir = Path(bbox_img_dir)
     output_notes_path = Path(output_notes_path)
 
     all_results = {}
 
-    for pdf_dir in grouping_path.iterdir():
-        if not pdf_dir.is_dir():
-            continue
-        for page_dir in pdf_dir.glob("page_*"):
-            for group_dir in page_dir.glob("group_*"):
-                measure_folder = group_dir / "measures" / "measure"
-                if not measure_folder.exists():
-                    print(f"⚠️ Skipping: {measure_folder} not found")
-                    continue
 
-                group_key = f"{pdf_dir.name}/{page_dir.name}/{group_dir.name}"
-                print(f"\n🎼 Predicting notes for {group_key}...")
+    for page_dir in pdf_dir.glob("page_*"):
+        for group_dir in page_dir.glob("group_*"):
+            measure_folder = group_dir / "measures" / "measure"
+            if not measure_folder.exists():
+                print(f"⚠️ Skipping: {measure_folder} not found")
+                continue
 
-                result = predict_notes(
-                    model_path=model_path,
-                    groups_path=str(measure_folder),
-                    output_base_dir=str(output_notes_path / pdf_dir.name / page_dir.name / group_dir.name),
-                    conf_threshold=0.72,
-                    save_crops_enabled=True,
-                    input_resize_factor=3.3,
-                    enhance_noteheads=True,
-                    visualize_resized=False,  # or 'display'
-                    blur_strength=8,
-                    save_bbox_images=True,
-                    bbox_images_dir=str(bbox_img_dir / pdf_dir.name / page_dir.name / group_dir.name)
-                )
+            group_key = f"{pdf_dir.name}/{page_dir.name}/{group_dir.name}"
+            print(f"\n🎼 Predicting notes for {group_key}...")
 
-                all_results[group_key] = result
+            result = predict_notes(
+                model_path=model_path,
+                groups_path=str(measure_folder),
+                output_base_dir=str(output_notes_path / pdf_dir.name / page_dir.name / group_dir.name),
+                conf_threshold=0.72,
+                save_crops_enabled=True,
+                input_resize_factor=3.3,
+                enhance_noteheads=True,
+                visualize_resized=False,  # or 'display'
+                blur_strength=8,
+                save_bbox_images=True,
+                bbox_images_dir=str(bbox_img_dir / pdf_dir.name / page_dir.name / group_dir.name)
+            )
+
+            all_results[group_key] = result
 
     print("\n✅ Finished predicting notes in all measure folders.")
     return all_results
