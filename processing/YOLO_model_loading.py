@@ -77,7 +77,7 @@ def crop_to_content(img, padding_info):
 
 
 def loading_YOLO_model_v2(model_path, input_source, output_folder=None, conf=0.75, iou=0.7, max_images=None,
-                          save_crops=False, sort_by_x=False, sort_by_y=False):
+                          save_crops=False, sort_by_x=False, sort_by_y=False, maximize_top_bottom=False, maximize_left_right=False):
     """Run YOLO model on a folder of images, a single image file, or a direct image array with annotation visualization."""
 
     # Load model
@@ -152,7 +152,7 @@ def loading_YOLO_model_v2(model_path, input_source, output_folder=None, conf=0.7
                 boxes_tensor = torch.tensor([box.xyxy[0].tolist() for box in result.boxes])
                 scores_tensor = torch.tensor([box.conf.item() for box in result.boxes])
                 keep = nms(boxes_tensor, scores_tensor, iou_threshold=iou)
-                filtered_boxes = [result.boxes[i] for i in keep]
+                result.boxes = [result.boxes[i] for i in keep]  # 🔥 Apply filtered boxes back
 
         annotated_img = img_resized.copy()
         boxes_detected = False
@@ -179,10 +179,28 @@ def loading_YOLO_model_v2(model_path, input_source, output_folder=None, conf=0.7
                         if save_crops:
                             # Adjust coordinates to remove padding and map to original image
                             x_min, y_min, x_max, y_max = adjust_coords_to_original(coords, padding_info)
-                            x_min = max(0, x_min)
-                            y_min = max(0, y_min)
-                            x_max = min(img.shape[1], x_max)
-                            y_max = min(img.shape[0], y_max)
+                            if maximize_top_bottom:
+                                #  Override top and bottom to maximize height
+                                y_min = 0
+                                y_max = img.shape[0]
+
+                                # Make sure x is still within bounds
+                                x_min = max(0, x_min)
+                                x_max = min(img.shape[1], x_max)
+                            elif maximize_left_right:
+                                # Override left and right to maximize width
+                                x_min = 0
+                                x_max = img.shape[1]
+
+                                # y still with bounds
+                                y_min = max(0, y_min)
+                                y_max = min(img.shape[0], y_max)
+                            else:
+                                x_min = max(0, x_min)
+                                y_min = max(0, y_min)
+                                x_max = min(img.shape[1], x_max)
+                                y_max = min(img.shape[0], y_max)
+
 
                             # Crop from original image
                             crop = img[y_min:y_max, x_min:x_max]
@@ -289,7 +307,8 @@ def clefs_separating(model_path, grandstaff_folder, output_root):
             save_crops=True,
             sort_by_y=True,
             conf=0.52,
-            iou=0.7
+            iou=0.2,
+            maximize_left_right=True
         )
 
     return output_pdf_root
@@ -335,8 +354,9 @@ def measures_separating_from_grouping(model_path, grouping_path):
                     str(measure_output),
                     save_crops=True,
                     conf=0.52,
-                    iou=0.3,
-                    sort_by_x=True
+                    iou=0.1,
+                    sort_by_x=True,
+                    maximize_top_bottom=True
                 )
 
 
