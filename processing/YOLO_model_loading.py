@@ -76,11 +76,173 @@ def crop_to_content(img, padding_info):
     return img[top:top + new_h, left:left + new_w]
 
 
-def loading_YOLO_model_v2(model_path, input_source, output_folder=None, conf=0.75, iou=0.7, max_images=None,
-                          save_crops=False, sort_by_x=False, sort_by_y=False, maximize_top_bottom=False, maximize_left_right=False):
-    """Run YOLO model on a folder of images, a single image file, or a direct image array with annotation visualization."""
+# def loading_YOLO_model_v2(model_path, input_source, output_folder=None, conf=0.75, iou=0.7, max_images=None,
+#                           save_crops=False, sort_by_x=False, sort_by_y=False, maximize_top_bottom=False, maximize_left_right=False,
+#                           bbox_left_expand=10, missing_gap_threshold=100, modified_needed=False):
+#     """Run YOLO model on a folder of images, a single image file, or a direct image array with annotation visualization."""
+#
+#     # Load model
+#     global final_img
+#     try:
+#         model = YOLO(model_path)
+#         print("Loaded model with classes:", model.names)
+#     except Exception as e:
+#         raise FileNotFoundError(f"Failed to load model at {model_path}: {str(e)}")
+#
+#     # Generate color map
+#     class_colors = {cid: tuple(random.randint(0, 255) for _ in range(3)) for cid in model.names}
+#
+#     # Initialize variables
+#     image_files = []
+#     input_folder = None
+#     single_image = None
+#     is_direct_image = False
+#
+#     # Determine input type
+#     if isinstance(input_source, np.ndarray):  # Direct image array
+#         is_direct_image = True
+#         single_image = input_source
+#         image_files = ["direct_image.jpg"]  # Dummy filename for processing
+#         if output_folder is None:
+#             raise ValueError("output_folder must be specified when using a direct image input")
+#         os.makedirs(output_folder, exist_ok=True)
+#     elif os.path.isfile(input_source):  # Single image file
+#         image_files = [os.path.basename(input_source)]
+#         input_folder = os.path.dirname(input_source) or "."
+#         if output_folder is None:
+#             output_folder = input_folder
+#         os.makedirs(output_folder, exist_ok=True)
+#     elif os.path.isdir(input_source):  # Directory of images
+#         input_folder = input_source
+#         image_files = [f for f in os.listdir(input_folder) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+#         if output_folder is None:
+#             output_folder = os.path.join(input_folder, "output")
+#         os.makedirs(output_folder, exist_ok=True)
+#     else:
+#         raise ValueError(f"Invalid input_source: {input_source}. Must be an image array, image file, or directory.")
+#
+#     if max_images and not is_direct_image:
+#         image_files = image_files[:min(max_images, len(image_files))]
+#     print(f"Processing {len(image_files)} images...")
+#
+#     # Process each image
+#     for idx, image_file in enumerate(image_files):
+#         if is_direct_image:
+#             print(f"\n[{idx + 1}/{len(image_files)}] Processing: Direct image input")
+#             img = single_image
+#             base_name = "direct_image"
+#         else:
+#             image_path = os.path.join(input_folder, image_file)
+#             print(f"\n[{idx + 1}/{len(image_files)}] Processing: {image_path}")
+#             img = cv2.imread(image_path)
+#             base_name = os.path.splitext(image_file)[0]
+#             if img is None:
+#                 print(f"⚠️ Skipping: Could not load {image_path}")
+#                 continue
+#
+#         img_resized, padding_info = resize_with_padding(img, target_size=(640, 640))
+#         if img_resized is None or padding_info is None:
+#             print(f"⚠️ Skipping due to invalid resize: {image_file}")
+#             continue
+#
+#         # results = model.predict(source=img_resized, conf=conf, iou=iou, imgsz=640)
+#         results = model.predict(source=img_resized, conf=conf, iou=iou, imgsz=640, nms=False)
+#
+#         for result in results:
+#             if result.boxes is not None and len(result.boxes) > 0:
+#                 boxes_tensor = torch.tensor([box.xyxy[0].tolist() for box in result.boxes])
+#                 scores_tensor = torch.tensor([box.conf.item() for box in result.boxes])
+#                 keep = nms(boxes_tensor, scores_tensor, iou_threshold=iou)
+#                 result.boxes = [result.boxes[i] for i in keep]  # 🔥 Apply filtered boxes back
+#
+#         annotated_img = img_resized.copy()
+#         boxes_detected = False
+#
+#         if results and len(results) > 0:
+#             for result in results:
+#                 boxes = getattr(result, 'boxes', None)
+#                 if boxes is not None and len(boxes) > 0:
+#                     boxes_detected = True
+#
+#                     # Sort boxes by x_min (left to right)
+#                     if sort_by_x:
+#                         boxes = sorted(boxes, key=lambda b: b.xyxy[0][0].item())
+#
+#                     if sort_by_y:
+#                         boxes = sorted(boxes, key=lambda b: b.xyxy[0][1].item())
+#
+#
+#                     # Modiy for getting undetected measure
+#
+#                     for i, box in enumerate(boxes):
+#                         class_id = int(box.cls)
+#                         label = model.names[class_id]
+#                         confidence = box.conf.item()
+#                         coords = box.xyxy[0].tolist()
+#
+#                         if save_crops:
+#                             # Adjust coordinates to remove padding and map to original image
+#                             x_min, y_min, x_max, y_max = adjust_coords_to_original(coords, padding_info)
+#                             if maximize_top_bottom:
+#                                 #  Override top and bottom to maximize height
+#                                 y_min = 0
+#                                 y_max = img.shape[0]
+#
+#                                 # Make sure x is still within bounds
+#                                 x_min = max(0, x_min)
+#                                 x_max = min(img.shape[1], x_max)
+#                             elif maximize_left_right:
+#                                 # Override left and right to maximize width
+#                                 x_min = 0
+#                                 x_max = img.shape[1]
+#
+#                                 # y still with bounds
+#                                 y_min = max(0, y_min)
+#                                 y_max = min(img.shape[0], y_max)
+#                             else:
+#                                 x_min = max(0, x_min)
+#                                 y_min = max(0, y_min)
+#                                 x_max = min(img.shape[1], x_max)
+#                                 y_max = min(img.shape[0], y_max)
+#
+#
+#                             # Crop from original image
+#                             crop = img[y_min:y_max, x_min:x_max]
+#                             if crop.size == 0:
+#                                 print(f"⚠️ Empty crop for {label}, skipping.")
+#                                 continue
+#
+#                             # Save to: output_folder/class_name/image_classname_index.jpg
+#                             class_dir = os.path.join(output_folder, label)
+#                             os.makedirs(class_dir, exist_ok=True)
+#                             crop_filename = f"{base_name}_{label}_{i}.jpg"
+#                             crop_path = os.path.join(class_dir, crop_filename)
+#                             cv2.imwrite(crop_path, crop)
+#                             print(f"📦 Saved crop: {crop_path}")
+#
+#                         color = class_colors[class_id]
+#                         print(f"🔍 {label} ({confidence:.2f}) at {coords}")
+#                         annotated_img = draw_box(annotated_img, coords, label, confidence, color=color)
+#
+#         final_img = crop_to_content(annotated_img, padding_info)
+#
+#         # Save result
+#         output_path = os.path.join(output_folder, f"{base_name}_detected.jpg")
+#         cv2.imwrite(output_path, final_img)
+#         print(f"✅ Saved to {output_path}")
+#
+#     print("\n🎉 All images processed.")
+#     # Return the final annotated image for direct image input
+#     if is_direct_image:
+#         return final_img
 
-    # Load model
+def loading_YOLO_model_v2(model_path, input_source, output_folder=None, conf=0.75, iou=0.7, max_images=None,
+                          save_crops=False, sort_by_x=False, sort_by_y=False,
+                          maximize_top_bottom=False, maximize_left_right=False,
+                          bbox_left_expand=10, missing_gap_threshold=100,
+                          modified_needed=False):
+    """Run YOLO model on images or a folder with optional crop saving and enhancements for measure detection."""
+
     global final_img
     try:
         model = YOLO(model_path)
@@ -88,30 +250,26 @@ def loading_YOLO_model_v2(model_path, input_source, output_folder=None, conf=0.7
     except Exception as e:
         raise FileNotFoundError(f"Failed to load model at {model_path}: {str(e)}")
 
-    # Generate color map
     class_colors = {cid: tuple(random.randint(0, 255) for _ in range(3)) for cid in model.names}
-
-    # Initialize variables
     image_files = []
     input_folder = None
     single_image = None
     is_direct_image = False
 
-    # Determine input type
-    if isinstance(input_source, np.ndarray):  # Direct image array
+    if isinstance(input_source, np.ndarray):
         is_direct_image = True
         single_image = input_source
-        image_files = ["direct_image.jpg"]  # Dummy filename for processing
+        image_files = ["direct_image.jpg"]
         if output_folder is None:
             raise ValueError("output_folder must be specified when using a direct image input")
         os.makedirs(output_folder, exist_ok=True)
-    elif os.path.isfile(input_source):  # Single image file
+    elif os.path.isfile(input_source):
         image_files = [os.path.basename(input_source)]
         input_folder = os.path.dirname(input_source) or "."
         if output_folder is None:
             output_folder = input_folder
         os.makedirs(output_folder, exist_ok=True)
-    elif os.path.isdir(input_source):  # Directory of images
+    elif os.path.isdir(input_source):
         input_folder = input_source
         image_files = [f for f in os.listdir(input_folder) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
         if output_folder is None:
@@ -124,7 +282,6 @@ def loading_YOLO_model_v2(model_path, input_source, output_folder=None, conf=0.7
         image_files = image_files[:min(max_images, len(image_files))]
     print(f"Processing {len(image_files)} images...")
 
-    # Process each image
     for idx, image_file in enumerate(image_files):
         if is_direct_image:
             print(f"\n[{idx + 1}/{len(image_files)}] Processing: Direct image input")
@@ -144,7 +301,6 @@ def loading_YOLO_model_v2(model_path, input_source, output_folder=None, conf=0.7
             print(f"⚠️ Skipping due to invalid resize: {image_file}")
             continue
 
-        # results = model.predict(source=img_resized, conf=conf, iou=iou, imgsz=640)
         results = model.predict(source=img_resized, conf=conf, iou=iou, imgsz=640, nms=False)
 
         for result in results:
@@ -152,83 +308,151 @@ def loading_YOLO_model_v2(model_path, input_source, output_folder=None, conf=0.7
                 boxes_tensor = torch.tensor([box.xyxy[0].tolist() for box in result.boxes])
                 scores_tensor = torch.tensor([box.conf.item() for box in result.boxes])
                 keep = nms(boxes_tensor, scores_tensor, iou_threshold=iou)
-                result.boxes = [result.boxes[i] for i in keep]  # 🔥 Apply filtered boxes back
+                result.boxes = [result.boxes[i] for i in keep]
 
         annotated_img = img_resized.copy()
-        boxes_detected = False
 
         if results and len(results) > 0:
             for result in results:
                 boxes = getattr(result, 'boxes', None)
-                if boxes is not None and len(boxes) > 0:
-                    boxes_detected = True
+                if boxes is None or len(boxes) == 0:
+                    continue
 
-                    # Sort boxes by x_min (left to right)
-                    if sort_by_x:
-                        boxes = sorted(boxes, key=lambda b: b.xyxy[0][0].item())
+                if sort_by_x:
+                    boxes = sorted(boxes, key=lambda b: b.xyxy[0][0].item())
+                if sort_by_y:
+                    boxes = sorted(boxes, key=lambda b: b.xyxy[0][1].item())
 
-                    if sort_by_y:
-                        boxes = sorted(boxes, key=lambda b: b.xyxy[0][1].item())
-
-                    for i, box in enumerate(boxes):
-                        class_id = int(box.cls)
-                        label = model.names[class_id]
-                        confidence = box.conf.item()
+                if modified_needed:
+                    bboxes = []
+                    for box in boxes:
                         coords = box.xyxy[0].tolist()
+                        coords[0] = max(0, coords[0] - bbox_left_expand)
+                        bboxes.append({
+                            "coords": coords,
+                            "class_id": int(box.cls),
+                            "label": model.names[int(box.cls)],
+                            "confidence": box.conf.item(),
+                            "is_fake": False
+                        })
 
-                        if save_crops:
-                            # Adjust coordinates to remove padding and map to original image
-                            x_min, y_min, x_max, y_max = adjust_coords_to_original(coords, padding_info)
-                            if maximize_top_bottom:
-                                #  Override top and bottom to maximize height
-                                y_min = 0
-                                y_max = img.shape[0]
+                    if sort_by_x:
+                        bboxes.sort(key=lambda b: b["coords"][0])
 
-                                # Make sure x is still within bounds
-                                x_min = max(0, x_min)
-                                x_max = min(img.shape[1], x_max)
-                            elif maximize_left_right:
-                                # Override left and right to maximize width
-                                x_min = 0
-                                x_max = img.shape[1]
+                    new_bboxes = []
+                    for i in range(len(bboxes) - 1):
+                        cur_xmax = bboxes[i]["coords"][2]
+                        next_xmin = bboxes[i + 1]["coords"][0]
+                        gap = next_xmin - cur_xmax
 
-                                # y still with bounds
-                                y_min = max(0, y_min)
-                                y_max = min(img.shape[0], y_max)
-                            else:
-                                x_min = max(0, x_min)
-                                y_min = max(0, y_min)
-                                x_max = min(img.shape[1], x_max)
-                                y_max = min(img.shape[0], y_max)
+                        new_bboxes.append(bboxes[i])
 
+                        if gap > missing_gap_threshold:
+                            left_box = bboxes[i]["coords"]
+                            right_box = bboxes[i + 1]["coords"]
 
-                            # Crop from original image
-                            crop = img[y_min:y_max, x_min:x_max]
-                            if crop.size == 0:
-                                print(f"⚠️ Empty crop for {label}, skipping.")
-                                continue
+                            fake_xmin = int(left_box[2])  # x_max of left box
+                            fake_xmax = int(right_box[0])  # x_min of right box
+                            fake_ymin = int(min(left_box[1], right_box[1]))
+                            fake_ymax = int(max(left_box[3], right_box[3]))
 
-                            # Save to: output_folder/class_name/image_classname_index.jpg
-                            class_dir = os.path.join(output_folder, label)
-                            os.makedirs(class_dir, exist_ok=True)
-                            crop_filename = f"{base_name}_{label}_{i}.jpg"
-                            crop_path = os.path.join(class_dir, crop_filename)
-                            cv2.imwrite(crop_path, crop)
-                            print(f"📦 Saved crop: {crop_path}")
+                            if fake_xmax > fake_xmin:
+                                new_bboxes.append({
+                                    "coords": [fake_xmin, fake_ymin, fake_xmax, fake_ymax],
+                                    "class_id": -1,
+                                    "label": "measure",
+                                    "confidence": 0.0,
+                                    "is_fake": True
+                                })
 
-                        color = class_colors[class_id]
-                        print(f"🔍 {label} ({confidence:.2f}) at {coords}")
-                        annotated_img = draw_box(annotated_img, coords, label, confidence, color=color)
+                    new_bboxes.append(bboxes[-1])  # Add last real box
+
+                    # === Check for missing at the start ===
+                    first_box = bboxes[0]["coords"]
+                    if first_box[0] > missing_gap_threshold:
+                        fake_xmin = 0
+                        fake_xmax = int(first_box[0])
+                        fake_ymin = int(first_box[1])
+                        fake_ymax = int(first_box[3])
+                        new_bboxes.insert(0, {
+                            "coords": [fake_xmin, fake_ymin, fake_xmax, fake_ymax],
+                            "class_id": -1,
+                            "label": "measure",
+                            "confidence": 0.0,
+                            "is_fake": True
+                        })
+
+                    # === Check for missing at the end ===
+                    last_box = bboxes[-1]["coords"]
+                    img_width = img.shape[1]
+                    if img_width - last_box[2] > missing_gap_threshold:
+                        fake_xmin = int(last_box[2])
+                        fake_xmax = img_width
+                        fake_ymin = int(last_box[1])
+                        fake_ymax = int(last_box[3])
+                        new_bboxes.append({
+                            "coords": [fake_xmin, fake_ymin, fake_xmax, fake_ymax],
+                            "class_id": -1,
+                            "label": "measure",
+                            "confidence": 0.0,
+                            "is_fake": True
+                        })
+
+                else:
+                    new_bboxes = []
+                    for box in boxes:
+                        coords = box.xyxy[0].tolist()
+                        new_bboxes.append({
+                            "coords": coords,
+                            "class_id": int(box.cls),
+                            "label": model.names[int(box.cls)],
+                            "confidence": box.conf.item(),
+                            "is_fake": False
+                        })
+
+                for i, box_data in enumerate(new_bboxes):
+                    coords = box_data["coords"]
+                    label = box_data["label"]
+                    class_id = box_data["class_id"]
+                    confidence = box_data["confidence"]
+                    is_fake = box_data["is_fake"]
+
+                    x_min, y_min, x_max, y_max = adjust_coords_to_original(coords, padding_info)
+
+                    if maximize_top_bottom:
+                        y_min = 0
+                        y_max = img.shape[0]
+                    if maximize_left_right:
+                        x_min = 0
+                        x_max = img.shape[1]
+
+                    x_min = max(0, x_min)
+                    y_min = max(0, y_min)
+                    x_max = min(img.shape[1], x_max)
+                    y_max = min(img.shape[0], y_max)
+
+                    crop = img[y_min:y_max, x_min:x_max]
+                    if crop.size == 0:
+                        print(f"⚠️ Empty crop for {label}, skipping.")
+                        continue
+
+                    if save_crops:
+                        class_dir = os.path.join(output_folder, label)
+                        os.makedirs(class_dir, exist_ok=True)
+                        crop_filename = f"{base_name}_{label}_{i}.jpg"
+                        crop_path = os.path.join(class_dir, crop_filename)
+                        cv2.imwrite(crop_path, crop)
+                        print(f"{'📦 FAKE' if is_fake else '📦'} Saved crop: {crop_path}")
+
+                    color = (0, 0, 255) if is_fake else class_colors.get(class_id, (0, 255, 0))
+                    annotated_img = draw_box(annotated_img, coords, label, confidence, color=color)
 
         final_img = crop_to_content(annotated_img, padding_info)
-
-        # Save result
         output_path = os.path.join(output_folder, f"{base_name}_detected.jpg")
         cv2.imwrite(output_path, final_img)
         print(f"✅ Saved to {output_path}")
 
     print("\n🎉 All images processed.")
-    # Return the final annotated image for direct image input
     if is_direct_image:
         return final_img
 
@@ -355,7 +579,10 @@ def measures_separating_from_grouping(model_path, grouping_path, pdf_path):
                 conf=0.52,
                 iou=0.1,
                 sort_by_x=True,
-                maximize_top_bottom=True
+                maximize_top_bottom=True,
+                modified_needed=True,
+                bbox_left_expand=10,
+                missing_gap_threshold=50
             )
 
 
