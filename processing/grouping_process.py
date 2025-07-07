@@ -266,32 +266,73 @@ import re
 from collections import defaultdict
 
 
+# def group_notes_by_page_group_measure_clef(nested_results):
+#     structure = defaultdict(  # page
+#         lambda: defaultdict(  # group
+#             lambda: defaultdict(  # measure
+#                 lambda: defaultdict(list)  # clef: list of notes
+#             )
+#         )
+#     )
+#
+#     for group_key, group_data in nested_results.items():
+#         for filename, notes in group_data.items():
+#             # Example: twinkle-twinkle-little-star-piano-solo_page_1_staff_group_0_clef_1_gClef_measure_3.jpg
+#             match = re.search(r'page_(\d+).*?group_(\d+).*?clef_\d+_(gClef|fClef)_measure_(\d+)', filename)
+#             if not match:
+#                 print(f"⚠️ Skipping: Filename not matched → {filename}")
+#                 continue
+#
+#             page, group, clef, measure = match.groups()
+#             page_key = f"page_{page}"
+#             group_key = f"group_{group}"
+#             measure_key = f"measure_{measure}"
+#             clef_key = clef
+#
+#             structure[page_key][group_key][measure_key][clef_key].extend(notes)
+#
+#     return structure
+
+import re
+from collections import defaultdict
+
 def group_notes_by_page_group_measure_clef(nested_results):
     structure = defaultdict(  # page
         lambda: defaultdict(  # group
             lambda: defaultdict(  # measure
-                lambda: defaultdict(list)  # clef: list of notes
+                dict  # clef_index: { 'clef_type': ..., 'notes': [...] }
             )
         )
     )
 
     for group_key, group_data in nested_results.items():
         for filename, notes in group_data.items():
-            # Example: twinkle-twinkle-little-star-piano-solo_page_1_staff_group_0_clef_1_gClef_measure_3.jpg
-            match = re.search(r'page_(\d+).*?group_(\d+).*?clef_\d+_(gClef|fClef)_measure_(\d+)', filename)
+            # Example: ..._page_1_staff_group_0_clef_1_gClef_measure_3.jpg
+            match = re.search(r'page_(\d+).*?group_(\d+).*?clef_(\d+)_(gClef|fClef)_measure_(\d+)', filename)
             if not match:
                 print(f"⚠️ Skipping: Filename not matched → {filename}")
                 continue
 
-            page, group, clef, measure = match.groups()
+            page, group, clef_index, clef_type, measure = match.groups()
             page_key = f"page_{page}"
             group_key = f"group_{group}"
             measure_key = f"measure_{measure}"
-            clef_key = clef
+            clef_index = int(clef_index)
 
-            structure[page_key][group_key][measure_key][clef_key].extend(notes)
+            structure[page_key][group_key][measure_key][clef_index] = {
+                "clef_type": clef_type,
+                "notes": notes
+            }
+
+    # Optional: sort clefs by clef_index
+    # This can be useful if you need ordered top-to-bottom clefs
+    for page_dict in structure.values():
+        for group_dict in page_dict.values():
+            for measure_key, measure_dict in group_dict.items():
+                group_dict[measure_key] = dict(sorted(measure_dict.items(), key=lambda x: x[0]))
 
     return structure
+
 
 
 
