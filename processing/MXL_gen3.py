@@ -259,14 +259,20 @@ def create_exact_musicxml_from_nested_results(
     measure_counter = 1
 
     for page_id in sorted(nested_results.keys()):
-        for group_id in sorted(nested_results[page_id].keys()):
-            previous_group_id = None
+        page_data = nested_results[page_id]
 
-            for measure_id in sorted(nested_results[page_id][group_id].keys(), key=lambda x: int(re.search(r'\d+', x).group())):
-                clef_dict = nested_results[page_id][group_id][measure_id]
+        for group_index, (group_id, group_measures) in enumerate(sorted(page_data.items())):
+            is_first_group = group_index == 0
+
+            for measure_index, (measure_id, clef_dict) in enumerate(sorted(group_measures.items(), key=lambda x: int(re.search(r'\d+', x[0]).group()))):
                 musicxml_content += f'    <measure number="{measure_counter}">\n'
 
-                if measure_counter == 1 or group_id != previous_group_id:
+                # Force new line for each group (except first)
+                if measure_index == 0 and not is_first_group:
+                    musicxml_content += '      <print new-system="yes"/>\n'
+
+                # Add attributes only on first measure or start of new group
+                if measure_counter == 1 or measure_index == 0:
                     musicxml_content += (
                         '      <attributes>\n'
                         '        <divisions>10080</divisions>\n'
@@ -281,37 +287,38 @@ def create_exact_musicxml_from_nested_results(
                     )
                     clef_done = set()
                     for clef_idx in sorted(clef_dict.keys()):
-                        clef_type = clef_dict[clef_idx]['clef_type']
-                        staff_num = 1 if clef_idx == 1 else 2
-                        if staff_num in clef_done:
-                            continue
-                        clef_sign = 'G' if clef_type.lower() == 'gclef' else 'F'
-                        musicxml_content += (
-                            f'        <clef number="{staff_num}">\n'
-                            f'          <sign>{clef_sign}</sign>\n'
-                            f'          <line>{get_line_for_clef(clef_sign)}</line>\n'
-                            f'        </clef>\n'
-                        )
-                        clef_done.add(staff_num)
+                        clef_type = clef_dict[clef_idx].get('clef_type', 'gClef')
+                        staff_num = 1 if 'g' in clef_type.lower() else 2
+                        if staff_num not in clef_done:
+                            clef_sign = 'G' if clef_type.lower() == 'gclef' else 'F'
+                            musicxml_content += (
+                                f'        <clef number="{staff_num}">\n'
+                                f'          <sign>{clef_sign}</sign>\n'
+                                f'          <line>{get_line_for_clef(clef_sign)}</line>\n'
+                                f'        </clef>\n'
+                            )
+                            clef_done.add(staff_num)
                     musicxml_content += '      </attributes>\n'
 
                 all_notes = []
-                for clef_idx, clef_data in clef_dict.items():
-                    staff_num = 1 if clef_idx == 1 else 2
-                    for note in clef_data['notes']:
+                for clef_index, clef_data in clef_dict.items():
+                    clef_type = clef_data.get('clef_type', 'gClef')
+                    staff_num = 1 if 'g' in clef_type.lower() else 2
+
+                    for note in clef_data.get('notes', []):
                         if all(k in note for k in ('step', 'octave', 'bbox')) and isinstance(note['bbox'], list):
                             all_notes.append({
                                 'step': note['step'],
                                 'octave': note['octave'],
                                 'bbox_x': float(note['bbox'][0]),
-                                'score': note.get('score', 0.0),
-                                'staff': staff_num
+                                'staff': staff_num,
                             })
 
                 all_notes.sort(key=lambda x: x['bbox_x'])
 
                 aligned_groups = []
                 current_group = []
+
                 for note in all_notes:
                     if not current_group:
                         current_group.append(note)
@@ -327,7 +334,7 @@ def create_exact_musicxml_from_nested_results(
 
                 duration_val = 20160
 
-                for group_idx, group in enumerate(aligned_groups):
+                for group in aligned_groups:
                     notes_by_staff = {}
                     for note in group:
                         notes_by_staff.setdefault(note['staff'], []).append(note)
@@ -370,7 +377,6 @@ def create_exact_musicxml_from_nested_results(
 
                 musicxml_content += '    </measure>\n'
                 measure_counter += 1
-                previous_group_id = group_id
 
     musicxml_content += '  </part>\n</score-partwise>'
 
