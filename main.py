@@ -104,10 +104,10 @@ from pathlib import Path
 from processing.path_setting import PathManager
 from processing.pdf2img import PDFImageConverter
 from processing.img_preprocessing.binarization import *
-from processing.organizing import *
-from processing.clefs_classification import *
-from processing.staffLine_seperating import *
-from processing.grouping_process import *
+from processing.organizing import ImageOrganizer,ImageCleaner
+from processing.clefs_classification import ClefClassifier
+from processing.staffLine_seperating import StaffLineSeparator
+from processing.grouping_process import MusicImageOrganizer, PitchResultGrouper
 from processing.staff_localization import *
 from processing.note_localization import *
 from processing.calculate_note_ptich import *
@@ -115,7 +115,7 @@ from processing.note_grouping import *
 from processing.musicXML_generating import *
 from processing.MXL_gen2 import *
 from processing.MXL_gen3 import *
-from processing.yolo_pipeline import YOLODetector
+from processing.YOLO_model_loading import YOLOPipeline, YOLODetector
 
 
 
@@ -154,54 +154,62 @@ def pipe_line():
     PathManager.create(path_list)
 
     # Getting image from pdf file
-    pdfConverter = PDFImageConverter(OG_path)
-    img_path = pdfConverter.convert(pdf_dir)
+    pdf_converter = PDFImageConverter(OG_path)
+    img_path = pdf_converter.convert(pdf_dir)
 
     # Pre-processing images
     binarized_path = binarize_folder_images(img_path, pdf_dir, binary_path, display=False)
 
     # Grand-staff separating
-    detector1 = YOLODetector(grandStaff_model)
-    grandStaff_sep_paths = detector1.grandStaff_separating(binarized_path, pdf_dir, grandStaff_path)
+    # detector1 = YOLODetector(grandStaff_model)
+    grand_staff_sep_paths = YOLOPipeline.grand_staff_separating(grandStaff_model ,binarized_path, pdf_dir, grandStaff_path)
 
     # Clefs separating
     detector2 = YOLODetector(clef_model)
-    clefs_sep_path = detector2.clefs_separating(grandStaff_sep_paths, pureClefs_path)
+    clefs_sep_path = YOLOPipeline.clefs_separating(clef_model, grand_staff_sep_paths, pureClefs_path)
 
     # Clean clefs
-    clean_clef_crops(clefs_sep_path, verbose=True)
+    ImageCleaner.clean_clef_crops(clefs_sep_path, verbose=True)
 
     # StaffLine separating
-    clef_sep_path, staffLine_only_path = separate_staff_from_clefs_flat(clefs_sep_path, cleanClefs_path, staffLines_path)
+    staff_line_separator = StaffLineSeparator(filter_val=160)
+    clef_sep_path, staff_line_only_path = staff_line_separator.separate_staff_from_clefs_flat(clefs_sep_path, cleanClefs_path, staffLines_path)
+
 
     # Separate into G-F clef
-    classify_and_organize_clefs(clef_cls_model, clef_sep_path)
+    clef_classifier = ClefClassifier(clef_cls_model)
+    clef_classifier.classify_and_organize(clef_sep_path)
 
     # Organize clefs and staffLine back to groups
-    group_all_sep_images_fixed(clef_sep_path, staffLine_only_path, grouping_path)
+    organizer = MusicImageOrganizer()
+    organizer.group_all_sep_images_fixed(clef_sep_path, staff_line_only_path, grouping_path)
 
     # Measure separating
-    detector3 = YOLODetector(measure_model)
-    detector3.measures_separating_from_grouping(grouping_path, pdf_dir)
+    # detector3 = YOLODetector(measure_model)
+    YOLOPipeline.measures_separating_from_grouping(measure_model, grouping_path, pdf_dir)
 
     # Clean measures
-    clean_measure_crops(grouping_path, pdf_dir, verbose=True)
+    cleaner = ImageCleaner()
+    cleaner.clean_measure_crops(grouping_path, pdf_dir, verbose=True)
 
     # Staff Localization
-    staff_results = process_group_staffs_from_grouping(grouping_path, pdf_dir)
+    staff_line_detector = StaffLineDetector(grouping_path, pdf_dir)
+    staff_results = staff_line_detector.process()
 
     # Note Localization
-    note_results = process_predict_notes_from_grouping(note_predict_model, pdf_dir, grouping_path, note_bbox, notations_path)
+    note_head_detector = NoteheadDetector(note_predict_model)
+    note_results = note_head_detector.process_predict_notes_from_grouping(pdf_dir, grouping_path, note_bbox, notations_path)
 
     # Pitch Calculate
-    pitch_results = process_cal_note_pitch(note_results, staff_results, steps, print_enable=True)
+    pitch_results = NotePitchCalculator.process(note_results, staff_results, steps, print_enable=True)
 
     # Note grouping per measure
-    final_result = group_notes_by_page_group_measure_clef(pitch_results)
+    pitch_grouper = PitchResultGrouper()
+    final_result = pitch_grouper.group_by_page_group_measure_clef(pitch_results)
 
     # Generate MusicXML
-    create_exact_musicxml_from_nested_results(final_result, pdf_path=pdf_dir, output_dir=results_path,
-                                              is_display=True, is_midi=True)
+    xml_generator = MusicXMLGenerator(output_dir=results_path)
+    xml_generator.generate(final_result, pdf_path=pdf_dir)
 
 # Run the pipeline
 if __name__ == "__main__":

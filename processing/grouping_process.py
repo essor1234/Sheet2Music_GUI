@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 from collections import defaultdict
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 class MusicImageOrganizer:
     def __init__(self, move: bool = False):
@@ -172,51 +172,86 @@ class MusicImageOrganizer:
 
 
 
-class PitchResultGrouper:
-    def __init__(self):
-        pass
+# from collections import defaultdict
+# from typing import Dict, List, Any
+# import re
 
-    def group_by_page_group_measure_clef(self, nested_results: Dict[str, Dict[str, Any]]) -> Dict:
+class PitchResultGrouper:
+    def __init__(self, regex_pattern: str = r'page_(\d+).*?group_(\d+).*?clef_(\d+)_(gClef|fClef)_measure_(\d+)'):
         """
-        Group pitch results into structured hierarchy:
-        page -> group -> measure -> clef_index: {clef_type, notes}
+        Initialize the PitchResultGrouper.
+
+        Args:
+            regex_pattern (str, optional): Regex pattern to parse filenames.
+                Defaults to matching 'page_X...group_Y...clef_Z_gClef|fClef_measure_W'.
+        """
+        self.regex_pattern = regex_pattern
+
+    def group_by_page_group_measure_clef(
+        self,
+        nested_results,
+        sort_clefs: bool = True
+    ) -> Dict[str, Dict[str, Dict[str, Dict[int, Dict[str, Any]]]]]:
+        """
+        Group pitch results into a structured hierarchy: page -> group -> measure -> clef_index: {clef_type, notes}.
+
+        Args:
+            nested_results (Dict[str, Dict[str, List[Dict[str, Any]]]]): Input dictionary with group keys
+                mapping to dictionaries of filenames and their note predictions.
+                Expected filename format: ...page_X...group_Y...clef_Z_gClef|fClef_measure_W.jpg
+            sort_clefs (bool, optional): If True, sort clefs by clef_index within each measure.
+                Defaults to True.
+
+        Returns:
+            Dict[str, Dict[str, Dict[str, Dict[int, Dict[str, Any]]]]]: Nested dictionary with structure:
+                page_X -> group_Y -> measure_Z -> clef_index: {'clef_type': str, 'notes': List[Dict[str, Any]]}
         """
         structure = defaultdict(
             lambda: defaultdict(
-                lambda: defaultdict(
-                    dict  # clef_index: { 'clef_type': ..., 'notes': [...] }
-                )
+                lambda: defaultdict(dict)
             )
         )
 
+        skipped_files = []
         for group_key, group_data in nested_results.items():
+            if not isinstance(group_data, dict):
+                print(f"⚠️ Skipping invalid group data for {group_key}: expected dict, got {type(group_data)}")
+                continue
+
             for filename, notes in group_data.items():
-                match = re.search(
-                    r'page_(\d+).*?group_(\d+).*?clef_(\d+)_(gClef|fClef)_measure_(\d+)',
-                    filename
-                )
+                match = re.search(self.regex_pattern, filename)
                 if not match:
                     print(f"⚠️ Skipping: Filename not matched → {filename}")
+                    skipped_files.append(filename)
                     continue
 
-                page, group, clef_index, clef_type, measure = match.groups()
-                page_key = f"page_{page}"
-                group_key = f"group_{group}"
-                measure_key = f"measure_{measure}"
-                clef_index = int(clef_index)
+                try:
+                    page, group, clef_index, clef_type, measure = match.groups()
+                    page_key = f"page_{page}"
+                    group_key = f"group_{group}"
+                    measure_key = f"measure_{measure}"
+                    clef_index = int(clef_index)
 
-                structure[page_key][group_key][measure_key][clef_index] = {
-                    "clef_type": clef_type,
-                    "notes": notes
-                }
+                    structure[page_key][group_key][measure_key][clef_index] = {
+                        "clef_type": clef_type,
+                        "notes": notes
+                    }
+                except Exception as e:
+                    print(f"⚠️ Error processing {filename}: {str(e)}")
+                    skipped_files.append(filename)
+                    continue
 
-        # Sort clefs by clef_index in each measure
-        for page_dict in structure.values():
-            for group_dict in page_dict.values():
-                for measure_key, measure_dict in group_dict.items():
-                    group_dict[measure_key] = dict(sorted(measure_dict.items(), key=lambda x: x[0]))
+        # Sort clefs by clef_index if requested
+        if sort_clefs:
+            for page_dict in structure.values():
+                for group_dict in page_dict.values():
+                    for measure_key, measure_dict in group_dict.items():
+                        group_dict[measure_key] = dict(sorted(measure_dict.items(), key=lambda x: x[0]))
 
-        return structure
+        if skipped_files:
+            print(f"\n📋 Skipped {len(skipped_files)} files due to unmatched filenames or errors.")
+
+        return dict(structure)  # Convert defaultdict to regular dict for return
 
 
 

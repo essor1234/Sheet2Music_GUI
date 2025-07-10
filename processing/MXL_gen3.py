@@ -408,55 +408,114 @@ import os
 import re
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 from music21 import converter, environment
 
 
 class MusicXMLGenerator:
-    def __init__(self,
-                 output_dir: str = "results",
-                 is_display: bool = True,
-                 is_midi: bool = True,
-                 chord_threshold: float = 30.0,
-                 musicxml_path: str = "C:/Program Files/MuseScore 4/bin/MuseScore4.exe"):
+    def __init__(
+        self,
+        output_dir: Path,
+        is_display: bool = True,
+        is_midi: bool = True,
+        chord_threshold: float = 30.0,
+        musicxml_path: str = "C:/Program Files/MuseScore 4/bin/MuseScore4.exe",
+        divisions: int = 10080,
+        default_duration: int = 20160,  # Half note duration
+        time_signature: Tuple[int, int] = (4, 4)
+    ):
+        """
+        Initialize the MusicXMLGenerator.
+
+        Args:
+            output_dir (str): Directory to save MusicXML and MIDI files.
+            is_display (bool): If True, display the score using MuseScore.
+            is_midi (bool): If True, export a MIDI file.
+            chord_threshold (float): Maximum pixel distance for grouping notes into chords.
+            musicxml_path (str): Path to MuseScore executable for displaying scores.
+            divisions (int): MusicXML divisions per quarter note.
+            default_duration (int): Default note duration (half note).
+            time_signature (Tuple[int, int]): Time signature as (beats, beat-type).
+        """
         self.output_dir = output_dir
         self.is_display = is_display
         self.is_midi = is_midi
         self.chord_threshold = chord_threshold
         self.musicxml_path = musicxml_path
+        self.divisions = divisions
+        self.default_duration = default_duration
+        self.time_signature = time_signature
+
+        # Validate MuseScore path
+        if is_display and not os.path.exists(musicxml_path):
+            print(f"⚠️ MuseScore path {musicxml_path} does not exist. Display disabled.")
+            self.is_display = False
+
+    def _get_staff_num_and_clef(self, clef_name: str) -> Tuple[int, str]:
+        """Map clef name to staff number and clef sign."""
+        clef_name = clef_name.lower()
+        if clef_name == 'gclef':
+            return 1, 'G'
+        elif clef_name == 'fclef':
+            return 2, 'F'
+        return 1, 'G'  # Default
 
     def _get_line_for_clef(self, clef_sign: str) -> int:
+        """Get line number for clef sign."""
         return 2 if clef_sign == 'G' else 4
 
     def _group_chords(self, notes: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+        """
+        Group notes into chords based on horizontal proximity.
+
+        Args:
+            notes: List of notes with 'step', 'octave', 'bbox_x', and 'staff' keys.
+
+        Returns:
+            List of chord groups, each a list of notes.
+        """
+        if not notes:
+            return []
+
         notes.sort(key=lambda x: x['bbox_x'])
-        groups = []
-        current_group = []
+        chords = []
+        current_chord = [notes[0]]
 
-        for note in notes:
-            if not current_group:
-                current_group.append(note)
+        for note in notes[1:]:
+            last_x = current_chord[-1]['bbox_x']
+            if note['bbox_x'] - last_x <= self.chord_threshold:
+                current_chord.append(note)
             else:
-                avg_x = sum(n['bbox_x'] for n in current_group) / len(current_group)
-                if abs(note['bbox_x'] - avg_x) <= self.chord_threshold:
-                    current_group.append(note)
-                else:
-                    groups.append(current_group)
-                    current_group = [note]
-        if current_group:
-            groups.append(current_group)
+                chords.append(current_chord)
+                current_chord = [note]
+        if current_chord:
+            chords.append(current_chord)
 
-        return groups
+        return chords
 
-    def generate(self, nested_results: Dict[str, Dict[str, Dict[str, Dict[int, Dict[str, Any]]]]],
-                 pdf_path: str = None):
-        # Determine file names
+    def generate(
+        self,
+        nested_results: Dict[str, Dict[str, Dict[str, Dict[int, Dict[str, Any]]]]],
+        pdf_path: str = None
+    ) -> None:
+        """
+        Generate MusicXML and optionally MIDI from nested note detection results.
+
+        Args:
+            nested_results: Nested dictionary with structure:
+                page_X -> group_Y -> measure_Z -> clef_idx: {'clef_type': str, 'notes': List[Dict]}
+            pdf_path: Path to the input PDF for naming output files (optional).
+        """
+        # Determine output filenames
         if pdf_path:
             pdf_name = Path(pdf_path).stem
         else:
-            first_key = next(iter(nested_results))
-            match = re.match(r'([^_]+(?:_[^_]+)*-\d+)_page_\d+_', first_key)
-            pdf_name = match.group(1) if match else "unknown_pdf"
+            first_key = next(iter(nested_results), None)
+            if first_key:
+                match = re.match(r'([^_]+(?:_[^_]+)*-\d+)_page_\d+_', first_key)
+                pdf_name = match.group(1) if match else "unknown_pdf"
+            else:
+                pdf_name = "unknown_pdf"
 
         save_dir = os.path.join(self.output_dir, pdf_name)
         os.makedirs(save_dir, exist_ok=True)
@@ -468,115 +527,150 @@ class MusicXMLGenerator:
         xml = []
 
         # MusicXML Header
-        xml.append('<?xml version="1.0" encoding="utf-8"?>')
-        xml.append('<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" '
-                   '"http://www.musicxml.org/dtds/partwise.dtd">')
-        xml.append('<score-partwise version="4.0">')
-        xml.append(f'''  <work>
-    <work-title>Generated Score</work-title>
-  </work>
-  <identification>
-    <creator type="composer">Sheet2Music</creator>
-    <encoding>
-      <encoding-date>{now}</encoding-date>
-      <software>Python</software>
-    </encoding>
-  </identification>
-  <defaults>
-    <scaling>
-      <millimeters>7</millimeters>
-      <tenths>40</tenths>
-    </scaling>
-  </defaults>
-  <part-list>
-    <score-part id="P1">
-      <part-name>Piano</part-name>
-    </score-part>
-  </part-list>
-  <part id="P1">''')
+        xml.extend([
+            '<?xml version="1.0" encoding="utf-8"?>',
+            '<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" '
+            '"http://www.musicxml.org/dtds/partwise.dtd">',
+            '<score-partwise version="4.0">',
+            '  <work>',
+            '    <work-title>Generated Score</work-title>',
+            '  </work>',
+            '  <identification>',
+            '    <creator type="composer">Sheet2Music</creator>',
+            '    <encoding>',
+            f'      <encoding-date>{now}</encoding-date>',
+            '      <software>Python</software>',
+            '    </encoding>',
+            '  </identification>',
+            '  <defaults>',
+            '    <scaling>',
+            '      <millimeters>7</millimeters>',
+            '      <tenths>40</tenths>',
+            '    </scaling>',
+            '  </defaults>',
+            '  <part-list>',
+            '    <score-part id="P1">',
+            '      <part-name>Piano</part-name>',
+            '    </score-part>',
+            '  </part-list>',
+            '  <part id="P1">'
+        ])
 
         measure_counter = 1
         for page_id in sorted(nested_results.keys()):
             page_data = nested_results[page_id]
             for group_index, (group_id, measures) in enumerate(sorted(page_data.items())):
                 is_first_group = group_index == 0
-
                 for measure_index, (measure_id, clefs) in enumerate(
-                        sorted(measures.items(), key=lambda x: int(re.search(r'\d+', x[0]).group()))):
+                    sorted(measures.items(), key=lambda x: int(re.search(r'\d+', x[0]).group()))
+                ):
                     xml.append(f'    <measure number="{measure_counter}">')
 
-                    # Line break for each new group (except first)
+                    # Add system break for new groups (except first)
                     if measure_index == 0 and not is_first_group:
                         xml.append('      <print new-system="yes"/>')
 
-                    # Add header on first or new group measure
+                    # Add attributes for first measure or start of group
                     if measure_counter == 1 or measure_index == 0:
-                        xml.append('      <attributes>')
-                        xml.append('        <divisions>10080</divisions>')
-                        xml.append('        <key><fifths>0</fifths></key>')
-                        xml.append('        <time><beats>4</beats><beat-type>4</beat-type></time>')
-                        xml.append('        <staves>2</staves>')
-
+                        xml.extend([
+                            '      <attributes>',
+                            f'        <divisions>{self.divisions}</divisions>',
+                            '        <key>',
+                            '          <fifths>0</fifths>',
+                            '        </key>',
+                            '        <time>',
+                            f'          <beats>{self.time_signature[0]}</beats>',
+                            f'          <beat-type>{self.time_signature[1]}</beat-type>',
+                            '        </time>',
+                            '        <staves>2</staves>'
+                        ])
                         seen_staffs = set()
-                        for idx in sorted(clefs.keys()):
-                            clef_type = clefs[idx].get("clef_type", "gClef").lower()
-                            staff = 1 if "g" in clef_type else 2
-                            if staff not in seen_staffs:
-                                sign = "G" if staff == 1 else "F"
-                                line = self._get_line_for_clef(sign)
-                                xml.append(f'        <clef number="{staff}"><sign>{sign}</sign><line>{line}</line></clef>')
-                                seen_staffs.add(staff)
+                        for clef_idx in sorted(clefs.keys()):
+                            clef_type = clefs[clef_idx].get('clef_type', 'gClef')
+                            staff_num, clef_sign = self._get_staff_num_and_clef(clef_type)
+                            if staff_num not in seen_staffs:
+                                xml.extend([
+                                    f'        <clef number="{staff_num}">',
+                                    f'          <sign>{clef_sign}</sign>',
+                                    f'          <line>{self._get_line_for_clef(clef_sign)}</line>',
+                                    '        </clef>'
+                                ])
+                                seen_staffs.add(staff_num)
                         xml.append('      </attributes>')
 
+                    # Collect all notes across clefs
                     all_notes = []
-                    for idx, data in clefs.items():
-                        staff = 1 if 'g' in data.get("clef_type", "gClef").lower() else 2
-                        for note in data.get("notes", []):
-                            if {'step', 'octave', 'bbox'} <= note.keys():
+                    for clef_idx, clef_data in sorted(clefs.items()):
+                        clef_type = clef_data.get('clef_type', 'gClef')
+                        staff_num, _ = self._get_staff_num_and_clef(clef_type)
+                        for note in clef_data.get('notes', []):
+                            if all(k in note for k in ('step', 'octave', 'bbox')) and isinstance(note['bbox'], list):
                                 all_notes.append({
                                     'step': note['step'],
                                     'octave': note['octave'],
                                     'bbox_x': float(note['bbox'][0]),
-                                    'staff': staff
+                                    'staff': staff_num
                                 })
 
-                    duration_val = 20160
+                    # Group notes into chords
                     aligned_groups = self._group_chords(all_notes)
 
+                    # Generate notes and chords
                     for group in aligned_groups:
                         notes_by_staff = {}
                         for note in group:
                             notes_by_staff.setdefault(note['staff'], []).append(note)
-
                         staffs = sorted(notes_by_staff.keys())
                         for i, staff in enumerate(staffs):
                             notes = notes_by_staff[staff]
                             notes.sort(key=lambda n: n['bbox_x'])
-                            for j, note in enumerate(notes):
-                                xml.append('      <note>')
-                                if j > 0:
-                                    xml.append('        <chord/>')
-                                xml.append(f'        <pitch><step>{note["step"]}</step><octave>{note["octave"]}</octave></pitch>')
-                                xml.append(f'        <duration>{duration_val}</duration><voice>{staff}</voice><type>half</type><staff>{staff}</staff>')
-                                xml.append('      </note>')
+                            for note_idx, note in enumerate(notes):
+                                xml.extend([
+                                    '      <note>',
+                                    '        <chord/>' if note_idx > 0 else '',
+                                    f'        <pitch>',
+                                    f'          <step>{note["step"]}</step>',
+                                    f'          <octave>{note["octave"]}</octave>',
+                                    f'        </pitch>',
+                                    f'        <duration>{self.default_duration}</duration>',
+                                    f'        <voice>{staff}</voice>',
+                                    f'        <type>half</type>',
+                                    f'        <staff>{staff}</staff>',
+                                    '      </note>'
+                                ])
                             if i < len(staffs) - 1:
-                                xml.append(f'      <backup><duration>{duration_val}</duration></backup>')
+                                xml.extend([
+                                    f'      <backup>',
+                                    f'        <duration>{self.default_duration}</duration>',
+                                    f'      </backup>'
+                                ])
 
+                    # Add rest if no notes
                     if not all_notes:
-                        xml.append('      <note><rest/><duration>{}</duration><voice>1</voice><type>whole</type><staff>1</staff></note>'.format(duration_val * 2))
+                        xml.extend([
+                            '      <note>',
+                            '        <rest/>',
+                            f'        <duration>{self.default_duration * 2}</duration>',
+                            '        <voice>1</voice>',
+                            '        <type>whole</type>',
+                            '        <staff>1</staff>',
+                            '      </note>'
+                        ])
 
                     xml.append('    </measure>')
                     measure_counter += 1
 
-        xml.append('  </part>\n</score-partwise>')
+        xml.extend(['  </part>', '</score-partwise>'])
 
+        # Save MusicXML
         try:
             with open(musicxml_file, 'w', encoding='utf-8') as f:
-                f.write("\n".join(xml))
+                f.write('\n'.join(line for line in xml if line))  # Skip empty lines
             print(f"✓ MusicXML saved to: {musicxml_file}")
         except Exception as e:
             print(f"✗ Error saving MusicXML: {e}")
 
+        # Display score
         if self.is_display:
             try:
                 env = environment.Environment()
@@ -586,6 +680,7 @@ class MusicXMLGenerator:
             except Exception as e:
                 print(f"✗ Error displaying score: {e}")
 
+        # Export MIDI
         if self.is_midi:
             try:
                 score = converter.parse(musicxml_file)

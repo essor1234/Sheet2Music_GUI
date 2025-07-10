@@ -462,55 +462,113 @@ import torchvision.models.detection as detection
 import matplotlib.pyplot as plt
 
 
+import os
+import cv2
+import numpy as np
+import torch
+import torchvision.models.detection as detection
+from PIL import Image
+import matplotlib.pyplot as plt
+from pathlib import Path
+from torchvision import transforms
+
 class NoteheadDetector:
-    def __init__(self, model_path, model_type='fasterrcnn_resnet50_fpn_v2', num_classes=5, device=None):
-        self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model = self.load_model(model_path, model_type, num_classes)
+    def __init__(self, model_path, model_type='fasterrcnn_resnet50_fpn_v2', num_classes=5, pretrained_backbone=False):
+        """Initialize the NoteheadDetector with a Faster R-CNN model."""
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = self.load_model(model_path, model_type, num_classes, pretrained_backbone)
         self.transform = transforms.Compose([transforms.ToTensor()])
 
-    def load_model(self, model_path, model_type, num_classes):
-        if not hasattr(detection, model_type):
-            raise ValueError(f"Unsupported model type: {model_type}")
+    def load_model(self, model_path, model_type, num_classes, pretrained_backbone):
+        """Load a Faster R-CNN model from the specified path."""
+        try:
+            model_fn = getattr(detection, model_type, None)
+            if model_fn is None:
+                raise ValueError(
+                    f"Invalid model_type: {model_type}. Must be a valid model in torchvision.models.detection."
+                )
+        except AttributeError:
+            raise ImportError("torchvision.models.detection module not found. Ensure torchvision is installed.")
 
-        model_fn = getattr(detection, model_type)
-        model = model_fn(num_classes=num_classes)
+        try:
+            model = model_fn(
+                pretrained=pretrained_backbone if 'pretrained' in model_fn.__code__.co_varnames else False,
+                pretrained_backbone=pretrained_backbone,
+                num_classes=num_classes
+            )
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize model {model_type}: {str(e)}")
 
-        state_dict = torch.load(model_path, map_location=self.device)
-        model.load_state_dict(state_dict, strict=False)
+        try:
+            state_dict = torch.load(model_path, map_location=self.device)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load model weights from {model_path}: {str(e)}")
+
+        model_state_dict = model.state_dict()
+        updated_state_dict = {}
+        for key, value in state_dict.items():
+            if key not in model_state_dict:
+                print(f"⚠️ Skipping unmatched key in state dict: {key}")
+                continue
+            if model_state_dict[key].shape != value.shape:
+                print(f"⚠️ Shape mismatch for key {key}: expected {model_state_dict[key].shape}, got {value.shape}")
+                continue
+            updated_state_dict[key] = value
+
+        try:
+            model.load_state_dict(updated_state_dict, strict=False)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load state dict into model: {str(e)}")
+
         model.to(self.device).eval()
-        print(f"✅ Loaded model {model_type} with {num_classes} classes")
+        print(f"✅ Loaded model {model_type} with {num_classes} classes from {model_path} on {self.device}")
         return model
 
     def preprocess_image(self, img_path, enhance=False, blur_type='gaussian', blur_strength=3):
+        """Load and preprocess an image."""
         img = cv2.imread(str(img_path))
         if img is None:
-            raise FileNotFoundError(f"Failed to load image: {img_path}")
+            print(f"⚠️ Failed to load {img_path}")
+            return None, None, None
+        orig_h, orig_w = img.shape[:2]
         if enhance:
             img = self.enhance_noteheads(img, blur_type, blur_strength)
-        return img
+        return img, orig_h, orig_w
 
     def enhance_noteheads(self, img, blur_type, blur_strength):
+        """Enhance noteheads in the image."""
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        if blur_type == 'gaussian':
+        if blur_type == 'gaussian' and blur_strength > 0:
             blur_strength = blur_strength if blur_strength % 2 == 1 else blur_strength + 1
             gray = cv2.GaussianBlur(gray, (blur_strength, blur_strength), 0)
-        elif blur_type == 'median':
+        elif blur_type == 'median' and blur_strength > 0:
             blur_strength = blur_strength if blur_strength % 2 == 1 else blur_strength + 1
             gray = cv2.medianBlur(gray, blur_strength)
-        elif blur_type == 'bilateral':
+        elif blur_type == 'bilateral' and blur_strength > 0:
             gray = cv2.bilateralFilter(gray, blur_strength, 75, 75)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         gray = clahe.apply(gray)
         gray = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8), iterations=1)
         return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
+    def resize_image(self, img_np, resize_factor, orig_w, orig_h):
+        """Resize the image by the specified factor."""
+        if resize_factor == 1.0:
+            return img_np, orig_w, orig_h
+        new_w = int(orig_w * resize_factor)
+        new_h = int(orig_h * resize_factor)
+        resized_img = cv2.resize(img_np, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+        return resized_img, new_w, new_h
+
     def run_inference(self, img_np):
+        """Run model inference on the image."""
         image = Image.fromarray(cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB))
         image_tensor = self.transform(image).to(self.device).unsqueeze(0)
         with torch.no_grad():
             return self.model(image_tensor)[0]
 
-    def process_predictions(self, predictions, conf_threshold, resize_factor=1.0):
+    def process_predictions(self, predictions, conf_threshold, resize_factor):
+        """Filter and normalize predictions, sorting by x1 coordinate."""
         results = []
         for box, score, label in zip(predictions['boxes'], predictions['scores'], predictions['labels']):
             if score >= conf_threshold:
@@ -523,41 +581,140 @@ class NoteheadDetector:
                 })
         return sorted(results, key=lambda x: x['bbox'][0])
 
-    def predict_image(self, img_path, conf_threshold=0.7, resize_factor=1.0, enhance=False,
-                      blur_type='gaussian', blur_strength=3, visualize=False):
-        img = self.preprocess_image(img_path, enhance=enhance, blur_type=blur_type, blur_strength=blur_strength)
-        orig_h, orig_w = img.shape[:2]
-        if resize_factor != 1.0:
-            img = cv2.resize(img, (int(orig_w * resize_factor), int(orig_h * resize_factor)))
-        predictions = self.run_inference(img)
-        filtered = self.process_predictions(predictions, conf_threshold, resize_factor)
+    def save_crops(self, img_np, filename, predictions, output_dir):
+        """Save cropped bounding boxes."""
+        os.makedirs(output_dir, exist_ok=True)
+        for i, pred in enumerate(predictions):
+            x1, y1, x2, y2 = map(int, pred['bbox'])
+            crop = img_np[y1:y2, x1:x2]
+            if crop.size == 0:
+                print(f"⚠️ Empty crop for {filename} at index {i}, skipping")
+                continue
+            crop_filename = f"{os.path.splitext(filename)[0]}_note_{i}_label_{pred['label']}.jpg"
+            crop_path = os.path.join(output_dir, crop_filename)
+            cv2.imwrite(crop_path, crop)
+            print(f"📦 Saved crop: {crop_path} (size: {crop.shape[1]}x{crop.shape[0]})")
 
-        if visualize:
-            img_vis = img.copy()
-            for pred in filtered:
-                x1, y1, x2, y2 = map(int, pred['bbox'])
-                cv2.rectangle(img_vis, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            plt.imshow(cv2.cvtColor(img_vis, cv2.COLOR_BGR2RGB))
-            plt.title("Predicted Bounding Boxes")
-            plt.axis("off")
+    def save_image_with_bboxes(self, img_np, filename, predictions, resize_factor, output_dir, new_w, new_h):
+        """Save the image with bounding boxes."""
+        os.makedirs(output_dir, exist_ok=True)
+        img_with_boxes = img_np.copy()
+        for pred in predictions:
+            x1 = int(pred['bbox'][0] * resize_factor)
+            y1 = int(pred['bbox'][1] * resize_factor)
+            x2 = int(pred['bbox'][2] * resize_factor)
+            y2 = int(pred['bbox'][3] * resize_factor)
+            cv2.rectangle(img_with_boxes, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        bbox_path = os.path.join(output_dir, f"{os.path.splitext(filename)[0]}_bbox.jpg")
+        cv2.imwrite(bbox_path, img_with_boxes)
+        print(f"📸 Saved image with bounding boxes: {bbox_path} (size: {new_w}x{new_h})")
+
+    def visualize_resized_image(self, img_np, filename, new_w, new_h, visualize_mode, visualize_dir):
+        """Visualize or save the resized image."""
+        if not visualize_mode:
+            return
+        if visualize_mode == 'display':
+            plt.figure(figsize=(10, 10))
+            plt.imshow(cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB))
+            plt.title(f"Resized: {filename} ({new_w}x{new_h})")
+            plt.axis('off')
             plt.show()
+        elif visualize_mode == 'save' and visualize_dir:
+            os.makedirs(visualize_dir, exist_ok=True)
+            vis_path = os.path.join(visualize_dir, f"{os.path.splitext(filename)[0]}_resized.jpg")
+            cv2.imwrite(vis_path, img_np)
+            print(f"📸 Saved resized image: {vis_path} (size: {new_w}x{new_h})")
 
-        return filtered
+    def predict_image(self, img_path, conf_threshold=0.5, resize_factor=2.0, enhance=False,
+                      blur_type='gaussian', blur_strength=3, visualize_resized=False,
+                      save_crops_enabled=False, output_base_dir=None,
+                      save_bbox_images=False, bbox_images_dir=None):
+        """Predict notes in a single image."""
+        img_np, orig_h, orig_w = self.preprocess_image(img_path, enhance, blur_type, blur_strength)
+        if img_np is None:
+            return []
 
-    def predict_folder(self, folder_path, conf_threshold=0.7, resize_factor=1.0, enhance=False,
-                       blur_type='gaussian', blur_strength=3, visualize=False):
+        img_resized, new_w, new_h = self.resize_image(img_np, resize_factor, orig_w, orig_h)
+        self.visualize_resized_image(img_resized, os.path.basename(img_path), new_w, new_h, visualize_resized, output_base_dir)
+
+        predictions = self.run_inference(img_resized)
+        filtered_preds = self.process_predictions(predictions, conf_threshold, resize_factor)
+
+        if save_crops_enabled and output_base_dir:
+            self.save_crops(img_np, os.path.basename(img_path), filtered_preds, output_base_dir)
+
+        if save_bbox_images and bbox_images_dir:
+            self.save_image_with_bboxes(img_resized, os.path.basename(img_path), filtered_preds,
+                                        resize_factor, bbox_images_dir, new_w, new_h)
+
+        return filtered_preds
+
+    def predict_folder(self, folder_path, conf_threshold=0.5, resize_factor=2.0, enhance=False,
+                       blur_type='gaussian', blur_strength=3, visualize_resized=False,
+                       save_crops_enabled=False, output_base_dir=None,
+                       save_bbox_images=False, bbox_images_dir=None):
+        """Predict notes in all images in a folder."""
+        if not os.path.isdir(folder_path):
+            print(f"❌ Invalid folder path: {folder_path}")
+            return {}
+
         results = {}
-        for img_file in os.listdir(folder_path):
-            if img_file.lower().endswith(('.jpg', '.png', '.jpeg')):
-                img_path = os.path.join(folder_path, img_file)
-                print(f"📷 Predicting: {img_file}")
-                try:
-                    predictions = self.predict_image(
-                        img_path, conf_threshold, resize_factor,
-                        enhance, blur_type, blur_strength, visualize
-                    )
-                    results[img_file] = predictions
-                except Exception as e:
-                    print(f"❌ Failed on {img_file}: {e}")
+        image_files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        if not image_files:
+            print(f"⚠️ No image files found in {folder_path}")
+            return {}
+
+        print(f"📄 Found {len(image_files)} images in: {folder_path}")
+        for idx, filename in enumerate(image_files):
+            img_path = os.path.join(folder_path, filename)
+            print(f"[{idx+1}/{len(image_files)}] Predicting: {filename}")
+            try:
+                predictions = self.predict_image(
+                    img_path, conf_threshold, resize_factor, enhance, blur_type, blur_strength,
+                    visualize_resized, save_crops_enabled, output_base_dir, save_bbox_images, bbox_images_dir
+                )
+                results[filename] = predictions
+            except Exception as e:
+                print(f"❌ Failed on {filename}: {e}")
+        print("✅ Prediction complete.")
         return results
 
+    def process_predict_notes_from_grouping(self, pdf_path, grouping_path, bbox_img_dir, output_notes_path,
+                                           conf_threshold=0.72, resize_factor=3.3, enhance_noteheads=True,
+                                           blur_type='gaussian', blur_strength=8, visualize_resized=False,
+                                           save_crops_enabled=True, save_bbox_images=True):
+        """Traverse grouping_path/.../group_x/measures/measure/ folders to predict notes."""
+        pdf_name = os.path.splitext(os.path.basename(pdf_path))[0]
+        pdf_dir = Path(grouping_path) / pdf_name
+        bbox_img_dir = Path(bbox_img_dir)
+        output_notes_path = Path(output_notes_path)
+
+        all_results = {}
+        for page_dir in pdf_dir.glob("page_*"):
+            for group_dir in page_dir.glob("group_*"):
+                measure_folder = group_dir / "measures" / "measure"
+                if not measure_folder.exists():
+                    print(f"⚠️ Skipping: {measure_folder} not found")
+                    continue
+
+                group_key = f"{pdf_dir.name}/{page_dir.name}/{group_dir.name}"
+                print(f"\n🎼 Predicting notes for {group_key}...")
+
+                result = self.predict_folder(
+                    folder_path=str(measure_folder),
+                    conf_threshold=conf_threshold,
+                    resize_factor=resize_factor,
+                    enhance=enhance_noteheads,
+                    blur_type=blur_type,
+                    blur_strength=blur_strength,
+                    visualize_resized=visualize_resized,
+                    save_crops_enabled=save_crops_enabled,
+                    output_base_dir=str(output_notes_path / pdf_dir.name / page_dir.name / group_dir.name),
+                    save_bbox_images=save_bbox_images,
+                    bbox_images_dir=str(bbox_img_dir / pdf_dir.name / page_dir.name / group_dir.name)
+                )
+
+                all_results[group_key] = result
+
+        print("\n✅ Finished predicting notes in all measure folders.")
+        return all_results
