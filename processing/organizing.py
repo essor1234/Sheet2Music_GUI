@@ -267,7 +267,9 @@ class ImageOrganizer:
 
 class ImageCleaner:
     @staticmethod
+    @staticmethod
     def remove_small_images(folder, min_width=20, min_height=20, verbose=False):
+        """Removes images that are smaller than the specified dimensions."""
         removed = []
         for img_path in Path(folder).rglob("*.[jp][pn]g"):
             try:
@@ -276,26 +278,56 @@ class ImageCleaner:
                     img_path.unlink()
                     removed.append(str(img_path))
                     if verbose:
-                        print(f" Removed: {img_path.name} (too small or unreadable)")
+                        print(f" Removed (too small): {img_path.name}")
             except Exception as e:
-                print(f" Error reading {img_path}: {e}")
+                print(f" ⚠️ Error reading {img_path}: {e}")
         return removed
 
+    # --- NEW METHOD ---
     @staticmethod
-    def clean_clef_crops(root_folder, min_width=20, min_height=20, verbose=True):
+    def remove_large_images(folder, max_height=200, verbose=False):
+        """Removes images that are taller than the specified max_height."""
         removed = []
+        for img_path in Path(folder).rglob("*.[jp][pn]g"):
+            try:
+                img = cv2.imread(str(img_path))
+                # If the image's height is greater than the maximum allowed height
+                if img is not None and img.shape[0] > max_height:
+                    img_path.unlink()
+                    removed.append(str(img_path))
+                    if verbose:
+                        print(f" Removed (too large): {img_path.name}")
+            except Exception as e:
+                print(f" ⚠️ Error reading {img_path}: {e}")
+        return removed
+
+    # --- UPDATED ORCHESTRATOR ---
+    @staticmethod
+    def clean_clef_crops(root_folder, min_width=20, min_height=20, max_height=140, verbose=True):
+        """
+        Cleans crop directories by removing both excessively small and large images.
+        """
+        removed_files = []
         for page_dir in Path(root_folder).glob("page_*"):
             if not page_dir.is_dir():
                 continue
+
+            # The label_dir is the folder containing the actual crops, e.g., 'clef' or 'measure'
             for label_dir in page_dir.iterdir():
                 if not label_dir.is_dir():
                     continue
                 if verbose:
-                    print(f" Cleaning: {label_dir}")
-                removed += ImageCleaner.remove_small_images(label_dir, min_width, min_height, verbose)
+                    print(f"\n--- Cleaning: {label_dir} ---")
+
+                # Run both cleaning steps
+                removed_files += ImageCleaner.remove_small_images(label_dir, min_width, min_height, verbose)
+                removed_files += ImageCleaner.remove_large_images(label_dir, max_height, verbose)
+
         if verbose:
-            print(f" Done cleaning clef crops. Total removed: {len(removed)}")
-        return removed
+            print("\n--------------------------")
+            print(f"✅ Done cleaning. Total files removed: {len(removed_files)}")
+        return removed_files
+
 
     @staticmethod
     def clean_measure_crops(grouping_path, pdf_path, min_width=20, min_height=20, verbose=True):

@@ -6,6 +6,7 @@ import torch
 from pathlib import Path
 from ultralytics import YOLO
 from typing import List, Dict, Any, Union, Tuple, Optional
+from torchvision.ops import nms as torchvision_nms
 
 # Helper functions (unchanged)
 def resize_with_padding(img: np.ndarray, target_size: Tuple[int, int] = (640, 640)) -> Tuple[Optional[np.ndarray], Optional[Dict]]:
@@ -73,8 +74,11 @@ def crop_to_content(img: np.ndarray, padding_info: Dict) -> np.ndarray:
     return img[top:top + new_h, left:left + new_w]
 
 def nms(boxes: torch.Tensor, scores: torch.Tensor, iou_threshold: float) -> List[int]:
-    """Placeholder for non-maximum suppression."""
-    return list(range(len(boxes)))  # Replace with actual NMS implementation
+    """
+    Perform non-maximum suppression using torchvision's built-in method.
+    """
+    return torchvision_nms(boxes, scores, iou_threshold).tolist()
+
 
 class YOLODetector:
     def __init__(self, model_path: str):
@@ -92,22 +96,23 @@ class YOLODetector:
 
         self.class_colors = {cid: tuple(random.randint(0, 255) for _ in range(3)) for cid in self.model.names}
 
+
     def detect(
-        self,
-        input_source: Union[str, np.ndarray],
-        output_folder: Optional[str] = None,
-        conf: float = 0.75,
-        iou: float = 0.7,
-        max_images: Optional[int] = None,
-        save_crops: bool = False,
-        sort_by_x: bool = False,
-        sort_by_y: bool = False,
-        maximize_top_bottom: bool = False,
-        maximize_left_right: bool = False,
-        bbox_left_expand: int = 10,
-        missing_gap_threshold: int = 100,
-        modified_needed: bool = False,
-        base_name: Optional[str] = None
+            self,
+            input_source: Union[str, np.ndarray],
+            output_folder: Optional[str] = None,
+            conf: float = 0.75,
+            iou: float = 0.7,
+            max_images: Optional[int] = None,
+            save_crops: bool = False,
+            sort_by_x: bool = False,
+            sort_by_y: bool = False,
+            maximize_top_bottom: bool = False,
+            maximize_left_right: bool = False,
+            bbox_left_expand: int = 10,
+            missing_gap_threshold: int = 100,
+            modified_needed: bool = False,
+            base_name: Optional[str] = None
     ) -> Optional[np.ndarray]:
         """
         Run YOLO detection on images or a folder with optional crop saving and enhancements.
@@ -166,7 +171,8 @@ class YOLODetector:
         final_img = None
         for idx, image_file in enumerate(image_files):
             current_base_name = base_name if base_name else os.path.splitext(image_file)[0]
-            print(f"\n[{idx + 1}/{len(image_files)}] Processing: {image_file if not is_direct_image else 'direct image'}")
+            print(
+                f"\n[{idx + 1}/{len(image_files)}] Processing: {image_file if not is_direct_image else 'direct image'}")
 
             img = single_image if is_direct_image else cv2.imread(os.path.join(input_folder, image_file))
             if img is None:
@@ -179,14 +185,13 @@ class YOLODetector:
                     print(f"⚠️ Skipping due to invalid resize: {image_file}")
                     continue
 
-                results = self.model.predict(source=img_resized, conf=conf, iou=iou, imgsz=640, nms=False)
+                # === MODIFICATION START ===
+                # 1. Enable built-in NMS by setting nms=True.
+                # 2. The `iou` and `conf` parameters will now be used directly by the model.
+                results = self.model.predict(source=img_resized, conf=conf, iou=iou, imgsz=640, nms=True)
 
-                for result in results:
-                    if result.boxes is not None and len(result.boxes) > 0:
-                        boxes_tensor = torch.tensor([box.xyxy[0].tolist() for box in result.boxes])
-                        scores_tensor = torch.tensor([box.conf.item() for box in result.boxes])
-                        keep = nms(boxes_tensor, scores_tensor, iou_threshold=iou)
-                        result.boxes = [result.boxes[i] for i in keep]
+                # 3. The custom NMS block below is no longer needed and has been removed.
+                # === MODIFICATION END ===
 
                 final_img = self._save_results(
                     img=img,
@@ -461,7 +466,7 @@ class YOLOPipeline:
         grandstaff_folder: str,
         output_root: str,
         conf: float = 0.52,
-        iou: float = 0.05,
+        iou: float = 0.2,
         save_crops: bool = True,
         sort_by_y: bool = True,
         maximize_left_right: bool = True
