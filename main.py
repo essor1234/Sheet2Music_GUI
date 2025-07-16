@@ -117,7 +117,7 @@ from processing.MXL_gen2 import *
 from processing.MXL_gen3 import *
 from processing.YOLO_model_loading import YOLOPipeline, YOLODetector
 
-
+from processing.conver2mp3 import midi_to_mp3
 
 # Base home path (absolute)
 home_path = Path("data_storage").resolve()
@@ -138,7 +138,6 @@ note_bbox = home_path / "note_bbox"
 path_list = [OG_path, binary_path, staffLines_path, grandStaff_path, cleanClefs_path, measures_path,
              notations_path, pureClefs_path, grouping_path, note_bbox, results_path]
 
-pdf_dir = "twinkle-twinkle-little-star-piano-solo.pdf"  # For testing
 
 # Define models
 grandStaff_model = "models/group_staff_seperating_2nd_v2.pt"
@@ -149,7 +148,8 @@ note_predict_model = "models/fasterrcnn_finetuned_1606.pth"
 
 steps = ["C", "D", "E", "F", "G", "A", "B"]
 
-def pipe_line():
+
+def pipe_line(pdf_dir):
     # Create requirement paths
     PathManager.create(path_list)
 
@@ -169,17 +169,19 @@ def pipe_line():
     clefs_sep_path = YOLOPipeline.clefs_separating(clef_model, grand_staff_sep_paths, pureClefs_path)
 
     # Clean clefs
-    ImageCleaner.clean_clef_crops(clefs_sep_path, verbose=True)
+    ImageCleaner.clean_clef_crops(clefs_sep_path, verbose=True, max_height=140)
 
     # StaffLine separating
     staff_line_separator = StaffLineSeparator(filter_val=160)
-    clef_sep_path, staff_line_only_path = staff_line_separator.separate_staff_from_clefs_flat(clefs_sep_path, cleanClefs_path, staffLines_path)
-
+    clef_sep_path, staff_line_only_path = staff_line_separator.separate_staff_from_clefs_flat(clefs_sep_path,
+                                                                                              cleanClefs_path,
+                                                                                              staffLines_path)
 
     # Separate into G-F clef
-    clef_classifier = ClefClassifier(clef_cls_model)
+    clef_classifier = ClefClassifier(clef_cls_model, padding=3, min_width=60, min_crop_size=3)
     clef_classifier.classify_and_organize(clef_sep_path)
 
+    # Organize clefs and staffLine back to groups
     # Organize clefs and staffLine back to groups
     organizer = MusicImageOrganizer()
     organizer.group_all_sep_images_fixed(clef_sep_path, staff_line_only_path, grouping_path)
@@ -201,16 +203,31 @@ def pipe_line():
     note_results = note_head_detector.process_predict_notes_from_grouping(pdf_dir, grouping_path, note_bbox, notations_path)
 
     # Pitch Calculate
-    pitch_results = NotePitchCalculator.process(note_results, staff_results, steps, print_enable=True)
+    # Pitch Calculate
+    pitch_calculator = NotePitchCalculator(steps=steps)
+    pitch_results = pitch_calculator.process(note_results, staff_results, print_enable=True)
 
+    # Note grouping per measure
     # Note grouping per measure
     pitch_grouper = PitchResultGrouper()
     final_result = pitch_grouper.group_by_page_group_measure_clef(pitch_results)
 
     # Generate MusicXML
-    xml_generator = MusicXMLGenerator(output_dir=results_path)
+    xml_generator = MusicXMLGenerator(output_dir=results_path, is_display=False)
     xml_generator.generate(final_result, pdf_path=pdf_dir)
+
+
+    # # Convert MIDI to MP3
+    # pdf_stem = Path(pdf_dir).stem
+    # midi_path = Path("data_storage/results_path") / pdf_stem / f"{pdf_stem}_results.mid"
+    # mp3_path = midi_path.with_suffix(".mp3")
+    # sf2_path = Path("soundfonts/FluidR3_GM.sf2")
+    # fluidsynth_exe = Path("fluidsynth-2.4.6-win10-x64/bin/fluidsynth.exe")
+    #
+    # if midi_path.exists() and sf2_path.exists():
+    #     midi_to_mp3(midi_path, sf2_path, mp3_path, fluidsynth_exe)
+
 
 # Run the pipeline
 if __name__ == "__main__":
-    pipe_line()
+    pipe_line(pdf_dir = "twinkle-twinkle-little-star-piano-solo.pdf")

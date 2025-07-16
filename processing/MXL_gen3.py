@@ -451,14 +451,16 @@ class MusicXMLGenerator:
             print(f"⚠️ MuseScore path {musicxml_path} does not exist. Display disabled.")
             self.is_display = False
 
-    def _get_staff_num_and_clef(self, clef_name: str) -> Tuple[int, str]:
-        """Map clef name to staff number and clef sign."""
+    def _get_staff_num_and_clef(self, clef_name: str, clef_idx: int) -> Tuple[int, str]:
+        """Map clef name and index to staff number and clef sign."""
         clef_name = clef_name.lower()
+        # Assign staff number: clef_idx=0 or 1 -> staff 1, clef_idx=2 -> staff 2
+        staff_num = 1 if clef_idx <= 1 else 2
         if clef_name == 'gclef':
-            return 1, 'G'
+            return staff_num, 'G'
         elif clef_name == 'fclef':
-            return 2, 'F'
-        return 1, 'G'  # Default
+            return staff_num, 'F'
+        return staff_num, 'G'  # Default to G clef if unrecognized
 
     def _get_line_for_clef(self, clef_sign: str) -> int:
         """Get line number for clef sign."""
@@ -494,12 +496,12 @@ class MusicXMLGenerator:
         return chords
 
     def generate(
-        self,
-        nested_results: Dict[str, Dict[str, Dict[str, Dict[int, Dict[str, Any]]]]],
-        pdf_path: str = None
+            self,
+            nested_results: Dict[str, Dict[str, Dict[str, Dict[int, Dict[str, Any]]]]],
+            pdf_path: str = None
     ) -> None:
         """
-        Generate MusicXML and optionally MIDI from nested note detection results.
+        Generate MusicXML and optionally MIDI from nested note detection results, with page breaks in a single file.
 
         Args:
             nested_results: Nested dictionary with structure:
@@ -547,6 +549,16 @@ class MusicXMLGenerator:
             '      <millimeters>7</millimeters>',
             '      <tenths>40</tenths>',
             '    </scaling>',
+            '    <page-layout>',
+            '      <page-height>1683.78</page-height>',
+            '      <page-width>1190.55</page-width>',
+            '      <page-margins>',
+            '        <left-margin>70</left-margin>',
+            '        <right-margin>70</right-margin>',
+            '        <top-margin>70</top-margin>',
+            '        <bottom-margin>70</bottom-margin>',
+            '      </page-margins>',
+            '    </page-layout>',
             '  </defaults>',
             '  <part-list>',
             '    <score-part id="P1">',
@@ -557,12 +569,30 @@ class MusicXMLGenerator:
         ])
 
         measure_counter = 1
-        for page_id in sorted(nested_results.keys()):
+        for page_index, page_id in enumerate(sorted(nested_results.keys())):
+            # Add page break with layout for all pages except the first
+            if page_index > 0:
+                xml.extend([
+                    f'    <measure number="{measure_counter}">',
+                    '      <print new-page="yes">',
+                    '        <page-layout>',
+                    '          <page-margins>',
+                    '            <left-margin>70</left-margin>',
+                    '            <right-margin>70</right-margin>',
+                    '            <top-margin>100</top-margin>',
+                    '            <bottom-margin>100</bottom-margin>',
+                    '          </page-margins>',
+                    '        </page-layout>',
+                    '      </print>',
+                    '    </measure>'
+                ])
+                measure_counter += 1
+
             page_data = nested_results[page_id]
             for group_index, (group_id, measures) in enumerate(sorted(page_data.items())):
                 is_first_group = group_index == 0
                 for measure_index, (measure_id, clefs) in enumerate(
-                    sorted(measures.items(), key=lambda x: int(re.search(r'\d+', x[0]).group()))
+                        sorted(measures.items(), key=lambda x: int(re.search(r'\d+', x[0]).group()))
                 ):
                     xml.append(f'    <measure number="{measure_counter}">')
 
@@ -585,9 +615,10 @@ class MusicXMLGenerator:
                             '        <staves>2</staves>'
                         ])
                         seen_staffs = set()
+                        # Process clefs based on clef_idx
                         for clef_idx in sorted(clefs.keys()):
                             clef_type = clefs[clef_idx].get('clef_type', 'gClef')
-                            staff_num, clef_sign = self._get_staff_num_and_clef(clef_type)
+                            staff_num, clef_sign = self._get_staff_num_and_clef(clef_type, clef_idx)
                             if staff_num not in seen_staffs:
                                 xml.extend([
                                     f'        <clef number="{staff_num}">',
@@ -598,11 +629,11 @@ class MusicXMLGenerator:
                                 seen_staffs.add(staff_num)
                         xml.append('      </attributes>')
 
-                    # Collect all notes across clefs
+                    # Collect all notes across clefs, preserving clef_idx for staff assignment
                     all_notes = []
                     for clef_idx, clef_data in sorted(clefs.items()):
-                        clef_type = clef_data.get('clef_type', 'gClef')
-                        staff_num, _ = self._get_staff_num_and_clef(clef_type)
+                        # Assign staff number: clef_idx=0 or 1 -> staff 1, clef_idx=2 -> staff 2
+                        staff_num = 1 if clef_idx <= 1 else 2
                         for note in clef_data.get('notes', []):
                             if all(k in note for k in ('step', 'octave', 'bbox')) and isinstance(note['bbox'], list):
                                 all_notes.append({
@@ -688,6 +719,3 @@ class MusicXMLGenerator:
                 print(f"🎶 MIDI exported to: {midi_file}")
             except Exception as e:
                 print(f"✗ Error saving MIDI: {e}")
-
-
-
