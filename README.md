@@ -11,8 +11,7 @@ Sheet2Music is a project that applies Deep Learning models and Computer Vision t
 
 ## Results
 ### Audio Sample
-Listen to a generated music piece:
-[Sample Music (MP3)](assets/twinkle-twinkle-little-star-piano-solo_results.mp3)
+[twinkle-twinkle-little-star-piano-solo_results.webm](https://github.com/user-attachments/assets/0e6ce694-cc03-4c2e-894b-370f458af384)
 
 ### Visualization
 A spectrogram of the generated music:
@@ -32,5 +31,14 @@ Follow these steps to set up and run Sheet2Music.
 ### Setup Instructions
 1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/your-username/MusicGenAI.git
-   cd MusicGenAI
+   git clone https://github.com/essor1234/Sheet2Music_GUI.git
+   cd Sheet2Music_GUI
+
+2. **Set Up Conda Environment:**:
+   ```bash
+   conda create --name sheet2music --file requirements.txt
+   conda activate sheet2music
+   
+3. **Run the Project:**:
+   ```bash
+   streamlit run app.py
