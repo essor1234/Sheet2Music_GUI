@@ -203,11 +203,9 @@ def pipe_line(pdf_dir):
     note_results = note_head_detector.process_predict_notes_from_grouping(pdf_dir, grouping_path, note_bbox, notations_path)
 
     # Pitch Calculate
-    # Pitch Calculate
     pitch_calculator = NotePitchCalculator(steps=steps)
     pitch_results = pitch_calculator.process(note_results, staff_results, print_enable=True)
 
-    # Note grouping per measure
     # Note grouping per measure
     pitch_grouper = PitchResultGrouper()
     final_result = pitch_grouper.group_by_page_group_measure_clef(pitch_results)
