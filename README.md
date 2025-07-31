@@ -42,6 +42,8 @@ Follow these steps to set up and run Sheet2Music.
 3. **Run the Project:**:
    ```bash
    streamlit run app.py
+### Current Limitation
+- The application currently just detects and calculates using notehead only, so there is no rhythm at all
 ### Future Enhancement
 - Update the pipeline for a more advanced process, which can help detect based on the relationship of notes
 - Use better models and prepare more data to improve accuracy
