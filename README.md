@@ -12,16 +12,16 @@ Sheet2Music is a project that applies Deep Learning models and Computer Vision t
 ## Results
 ### Audio Sample
 Listen to a generated music piece:
-[Sample Music (MP3)](assets/sample_music.mp3)
+[Sample Music (MP3)](assets/twinkle-twinkle-little-star-piano-solo_results.mp3)
 
 ### Visualization
 A spectrogram of the generated music:
-![Spectrogram](assets/spectrogram.png)
+![Spectrogram](assets/result.png)
 
 *Note*: Find these files in the `assets/` folder after cloning the repository.
 
 ## Implementation
-Follow these steps to set up and run MusicGenAI.
+Follow these steps to set up and run Sheet2Music.
 
 ### Prerequisites
 - Python 3.10
